@@ -39,6 +39,8 @@ void ES_Audit_Init(string sym, int magic) {
    ES_AUD_magic  = magic;
    ES__ResetPrev();
 }
+void ES_Audit_SetMagic(int magic) { ES_AUD_magic = magic; }
+
 
 double ES__BasketWAP(int side) {
    double sumvol=0, sumval=0;
