@@ -1,59 +1,41 @@
 // --- Logging includes (added; behavior-neutral)
 #include <EuroScalper/logging/Logger.mqh>
+#include <EuroScalper/logging/Audit.mqh>
 #include <EuroScalper/core/Normalize.mqh>
 #include <EuroScalper/core/MagicMap.mqh>
+extern int ES_LogLevelInput = 1;
 
-extern int ES_LogLevel = 3; // 0=NONE,1=BASIC,2=DEBUG,3=TRACE
 
 // --- Instrumentation helpers (behavior-neutral) [2025-09-01T04:24:34Z]
 int ES_prev_buy_count = -1;
 int ES_prev_sell_count = -1;
 
-void ES_LogInit(string sym, int magic) {LogSetLevel(ES_LogLevel);
+void ES_LogInit(string sym, int magic) {
    LogSetLabel("BASELINE");
+   LogSetLevel(ES_LogLevelInput);
    LogInit(sym, magic, 1143, "M"+IntegerToString(Period()), 2, -1);
    LogNote("boot","started","tester profile: build=1143, spread=2pts, slippage=match_baseline");
 }
-void ES_LogDeinit() { LogNote("deinit","stop",""); }
 
+void ES_LogDeinit() { LogNote("deinit","stop",""); }
 
 void ES_LogTick(string sym, int magic, int step_pts, int tp_pts, int max_trades) {
    string tf = "M" + IntegerToString(Period());
    int spread_pts = (int)MarketInfo(sym, MODE_SPREAD);
    double eq = AccountEquity();
    double fm = AccountFreeMargin();
+   // lightweight observation: counts only
    int buy_count=0, sell_count=0;
-
-   for(int i=0; i<OrdersTotal(); i++) {
-      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) {
-         if(OrderSymbol()==sym && OrderMagicNumber()==magic) {
-            if(OrderType()==OP_BUY)  buy_count++;
+   for(int i=0;i<OrdersTotal();i++) if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) {
+        if(OrderSymbol()==sym && OrderMagicNumber()==magic) {
+            if(OrderType()==OP_BUY) buy_count++;
             if(OrderType()==OP_SELL) sell_count++;
-         }
-      }
+        }
    }
-
-   // BASIC: count change (entry/close inferred)
-   if(ES_prev_buy_count>=0 && buy_count!=ES_prev_buy_count)
-      LogEvent((buy_count>ES_prev_buy_count? "entry_open":"close_ok"),"BUY",0,0,0,0,0, step_pts,tp_pts,spread_pts,-1, 0,max_trades,0,0,eq,fm,"count_change",0,"");
-   if(ES_prev_sell_count>=0 && sell_count!=ES_prev_sell_count)
-      LogEvent((sell_count>ES_prev_sell_count? "entry_open":"close_ok"),"SELL",0,0,0,0,0, step_pts,tp_pts,spread_pts,-1, 0,max_trades,0,0,eq,fm,"count_change",0,"");
-
-   ES_prev_buy_count=buy_count;
-   ES_prev_sell_count=sell_count;
-
-   // DEBUG: tick evaluation snapshot
-   if(LogGetLevel()>=ES_LOG_DEBUG) {
-      LogEventDebug("tick_eval",".",0,0,0,0,0, step_pts, tp_pts, spread_pts, -1,
-                    buy_count+sell_count, max_trades, 0, 0, eq, fm, "counts_only", 0, "");
-   }
-   // TRACE: pipeline breadcrumb (lightweight)
-   if(LogGetLevel()>=ES_LOG_TRACE) {
-      LogEventTrace("pipeline",".",0,0,0,0,0, step_pts, tp_pts, spread_pts, -1,
-                    buy_count+sell_count, max_trades, 0, 0, eq, fm, "scan", 0, "");
-   }
+   if(ES_prev_buy_count>=0 && buy_count!=ES_prev_buy_count) LogNote(buy_count>ES_prev_buy_count? "entry_open":"close_ok","BUY","count change");
+   if(ES_prev_sell_count>=0 && sell_count!=ES_prev_sell_count) LogNote(sell_count>ES_prev_sell_count? "entry_open":"close_ok","SELL","count change");
+   ES_prev_buy_count=buy_count; ES_prev_sell_count=sell_count;
 }
-
 
 //+------------------------------------------------------------------+
 //|                                                      
@@ -359,6 +341,7 @@ double returned_double;
 //+------------------------------------------------------------------+
 int init() {
    ES_LogInit(Symbol(), /*magic*/0);
+   ES_Audit_Init(Symbol(), I_i_71);
 
    I_s_2 = "Euro Scalper";
    I_d_67 = 2;
@@ -1926,6 +1909,7 @@ int start() {
       I_i_84 = I_i_84 - 1;
    } while (I_i_84 >= 0);
    L_i_15 = 0;
+   ES_Audit_OnTick((int)Step, (int)TakeProfit, MaxTrades);
    return L_i_15;
 }
 
