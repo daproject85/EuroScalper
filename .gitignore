@@ -1,0 +1,19 @@
+# Outside-MT4 repo ignores
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Python/venv/etc if you add tools
+.venv/
+__pycache__/
+
+# MT4 compiled outputs (do not track binaries)
+*.ex4
+*.ex5
+
+# Logs and CSV artifacts
+*.log
+*.csv
+
+# Local config
+/config/paths.json

@@ -1,0 +1,40 @@
+
+# Deterministic Parity Scenarios
+- name: "First entry BUY"
+  pre:
+    close2_vs_close1: "close[2] <= close[1]"
+    orders: 0
+    session_ok: true
+  expect:
+    send: BUY
+    lots: base_lot(I_d_44)
+    basket_tp: avg + TPpts
+
+- name: "Add SELL on step distance"
+  pre:
+    side: SELL
+    distance_pts: ">= Step"
+    count_lt_MaxTrades: true
+  expect:
+    send: SELL
+    lots: progression(I_i_98, I_i_77, LotMultiplikator, Lot)
+    tp_sync: avg - TPpts
+
+- name: "Daily target hit"
+  pre:
+    todays_closed_profit_ccy: ">= Daily_Target"
+  expect:
+    action: close_all_open_orders
+
+- name: "Hidden basket TP"
+  pre:
+    floating_profit_ccy: ">= Hiden_TP"
+  expect:
+    action: close_all_open_orders
+
+- name: "Equity risk exceeded"
+  pre:
+    floating_pl_ccy: "< 0"
+    abs_pl_ccy: "> TotalEquityRisk% of equity"
+  expect:
+    action: close_all_open_orders

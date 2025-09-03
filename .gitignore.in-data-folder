@@ -1,0 +1,20 @@
+# Inside-MT4-Data-Folder .gitignore
+# Ignore volatile platform folders/files
+history/
+logs/
+MQL4/Logs/
+MQL4/Files/
+MQL4/Tester/
+MQL4/Profiles/
+bases/
+tester/
+*.hst
+*.fxt
+*.log
+
+# Ignore compiled binaries
+*.ex4
+*.ex5
+
+# Local configs
+config/paths.json

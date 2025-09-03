@@ -1,0 +1,7 @@
+
+flowchart TD
+    start["start()"] --> f015["f0_15 (OrderSend wrapper)"]
+    start --> f001["f0_1 (close helpers)"]
+    start --> f018["f0_18 (trailing/BE)"]
+    init["init()"] --> start
+    start --> deinit["deinit()"]

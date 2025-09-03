@@ -1,0 +1,20 @@
+
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Gated : Session/day filters & range gate pass
+    Gated --> SignalCheck : Close[2] vs Close[1]
+    SignalCheck --> EntryBUY : Close[1] >= Close[2] AND no SELLs
+    SignalCheck --> EntrySELL : Close[1] < Close[2] AND no BUYs
+    EntryBUY --> BasketManage
+    EntrySELL --> BasketManage
+    BasketManage --> AddMore : |price - last_entry| >= Step AND count < MaxTrades
+    AddMore --> BasketManage
+    BasketManage --> SyncTP : compute avg price; set TP = avg ± TP_pts
+    SyncTP --> Idle
+    Idle --> EquityStop : floating P/L < 0 AND |P/L| > (TotalEquityRisk% of equity)
+    Idle --> HiddenTP : Hidden_TP basket profit reached
+    Idle --> DailyTarget : Use_Daily_Target and daily ≥ Daily_Target
+    EquityStop --> Flat
+    HiddenTP --> Flat
+    DailyTarget --> Flat
+    Flat --> Idle
