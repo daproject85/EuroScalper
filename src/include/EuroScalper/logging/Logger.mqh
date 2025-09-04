@@ -41,6 +41,7 @@ void LogInit(string sym, int magic, int build, string tf, int spread_pts, int sl
    ES_log_magic  = magic;
    ES_log_build  = build;
    ES_log_tf     = tf;
+   if (ES_log_magic <= 0) { return; }
    string base = "EuroScalper_"+sym+"_"+tf+"_"+IntegerToString(magic)+"_"+IntegerToString(build);
    if(StringLen(ES_log_label) > 0) base = base + "_" + ES_log_label;
    ES_log_fname = base + ".csv";
