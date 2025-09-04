@@ -138,6 +138,17 @@ for(int i=OrdersTotal()-1;i>=0;i--) if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES
                   eq, mf, "grid_entry", 0,
                   StringFormat("bid=%G ask=%G req=? fill=%G grid_idx=%d basket_tp=%G",
                                Bid, Ask, curr_info[c].open_price, open_count-1, basket_tp));
+         // log same-tick TP assignment for newly opened ticket
+         if(curr_info[c].tp > 0) {
+            LogEvent("modify_tp_ok", side,
+                     curr_info[c].lots, 0,
+                     0, wap, curr_info[c].tp,
+                     step_pts, tp_pts, spread_pts, 0,
+                     open_count, max_trades, 0, closed_today,
+                     eq, mf, "ticket_tp_set", 0,
+                     StringFormat("old_tp=%G new_tp=%G", 0.0, curr_info[c].tp));
+         }
+
       } else {
          // compare TP change
          double prev_tp = ES_prev_info[idx_prev].tp;

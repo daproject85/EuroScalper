@@ -3,9 +3,8 @@
 #include <EuroScalper/logging/Audit.mqh>
 #include <EuroScalper/core/Normalize.mqh>
 #include <EuroScalper/core/MagicMap.mqh>
+
 extern int ES_LogLevelInput = 1;
-
-
 // --- Instrumentation helpers (behavior-neutral) [2025-09-01T04:24:34Z]
 int ES_prev_buy_count = -1;
 int ES_prev_sell_count = -1;
@@ -14,9 +13,7 @@ void ES_LogInit(string sym, int magic) {
    LogSetLabel("BASELINE");
    LogSetLevel(ES_LogLevelInput);
    LogInit(sym, magic, 1143, "M"+IntegerToString(Period()), 2, -1);
-   LogNote("boot","started","tester profile: build=1143, spread=2pts, slippage=match_baseline");
 }
-
 void ES_LogDeinit() { LogNote("deinit","stop",""); }
 
 void ES_LogTick(string sym, int magic, int step_pts, int tp_pts, int max_trades) {
@@ -341,7 +338,6 @@ double returned_double;
 //+------------------------------------------------------------------+
 int init() {
    ES_LogInit(Symbol(), /*magic*/0);
-   ES_Audit_Init(Symbol(), I_i_71);
 
    I_s_2 = "Euro Scalper";
    I_d_67 = 2;
@@ -476,7 +472,10 @@ int init() {
    if (I_i_0 == 0) {
       I_i_0 = 999999;
    }
-   I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
+      LogSetMagic(I_i_0);
+   ES_Audit_Init(Symbol(), I_i_0);
+   LogNote("boot","started","tester profile: build=1143, spread=2pts, slippage=match_baseline");
+I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
    L_i_15 = 0;
    return 0;
 }
@@ -486,6 +485,8 @@ int init() {
 //+------------------------------------------------------------------+
 int start() {
    ES_LogTick(Symbol(), /*magic*/0, (int)Step, (int)TakeProfit, MaxTrades);
+   ES_Audit_OnTick((int)Step, (int)TakeProfit, MaxTrades);
+
 
    string S_s_20;
    string S_s_21;
@@ -868,8 +869,6 @@ int start() {
    I_d_46 = TakeProfit;
    I_d_47 = Step;
    I_i_71 = I_i_0;
-   LogSetMagic(I_i_71);
-   ES_Audit_SetMagic(I_i_71);
    L_s_1 = "false";
    L_s_2 = "false";
    G_i_75 = I_b_11;
@@ -1911,7 +1910,6 @@ int start() {
       I_i_84 = I_i_84 - 1;
    } while (I_i_84 >= 0);
    L_i_15 = 0;
-   ES_Audit_OnTick((int)Step, (int)TakeProfit, MaxTrades);
    return L_i_15;
 }
 
