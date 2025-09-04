@@ -16,6 +16,17 @@ int    ES_log_handle     = -1;
 void LogSetLabel(string lbl) { ES_log_label = lbl; }
 void LogSetLevel(int lvl)    { ES_log_level = lvl; }
 
+void LogSetMagic(int magic) {
+   if(magic == ES_log_magic) return;
+   if(ES_log_handle >= 0) { FileClose(ES_log_handle); ES_log_handle = -1; }
+   ES_log_magic = magic;
+   string base = "EuroScalper_"+ES_log_symbol+"_"+ES_log_tf+"_"+IntegerToString(ES_log_magic)+"_"+IntegerToString(ES_log_build);
+   if(StringLen(ES_log_label) > 0) base = base + "_" + ES_log_label;
+   ES_log_fname = base + ".csv";
+   ES_log_handle = FileOpen(ES_log_fname, FILE_CSV|FILE_WRITE, ';');
+   if(ES_log_handle >= 0) __LogHeader();
+}
+
 void __LogHeader() {
    if(ES_log_handle < 0) return;
    FileWrite(ES_log_handle,
