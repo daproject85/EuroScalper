@@ -565,7 +565,7 @@ int start() {
          else { _ok = 0; _why = "step"; }
       } else {
          // No basket open: we don’t seed here (logging-only visibility)
-         _dir = "NONE"; _ok = 0; _why = "seed";
+         _dir = "BUY"; _ok = 1; _why = "";
       }
 
       string _sig;
