@@ -1,94 +1,124 @@
-// EuroScalper Logger — clean MQL4 implementation — 2025-09-03T02:13:11Z
-#ifndef __EUROSCALPER_LOGGER_MQH__
-#define __EUROSCALPER_LOGGER_MQH__
+// EuroScalper Forensic Logger (CSV)
+#ifndef ES_LOGGER_MQH_INCLUDED
+#define ES_LOGGER_MQH_INCLUDED
 
-enum ES_LogLevel_e { ES_LOG_NONE=0, ES_LOG_BASIC=1, ES_LOG_DEBUG=2, ES_LOG_TRACE=3 };
+// Levels kept for EA input compatibility; writer respects BASIC+
+#define ES_LOG_NONE   0
+#define ES_LOG_BASIC  1
+#define ES_LOG_DEBUG  2
+#define ES_LOG_TRACE  3
 
-int    ES__log_level          = ES_LOG_TRACE;
-int    ES__log_handle         = -1;
-string ES__log_filename       = "";
-string ES__symbol             = "";
-int    ES__magic              = 0;
-int    ES__build              = 0;
-string ES__tf                 = "";
-int    ES__profile_spread_pts = 0;
-int    ES__profile_slip_pts   = -1;
-string ES__label              = "";
-bool   ES__flat_path          = false;
+// Persistent identity
+string  ES_log_symbol   = "";
+int     ES_log_magic    = 0;
+int     ES_log_build    = 0;
+string  ES_log_tf       = "";
+string  ES_log_label    = "BASELINE";
+int     ES_log_level    = ES_LOG_BASIC;
+// Static writer state
+int     ES_log_handle   = -1;
+int     ES_log_spread_pts = 0;
+int     ES_log_slip_pts   = -1;
 
-string ES__NowISO() { return(TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS)); }
+// Compose filename; do NOT open when magic==0 (avoid _0_ files)
+string __es_filename() {
+   string base = "EuroScalper_"+ES_log_symbol+"_"+ES_log_tf+"_"+IntegerToString(ES_log_magic)+"_"+IntegerToString(ES_log_build);
+   if(StringLen(ES_log_label)>0) base = base + "_" + ES_log_label;
+   return(base + ".csv");
+}
 
-void ES__WriteHeader() {
-   if(ES__log_handle < 0) return;
-   if(FileTell(ES__log_handle) == 0) {
-      FileWrite(ES__log_handle,
-         "ts","build","symbol","tf","magic","ticket","event","side","lots","price",
-         "last_entry_price","avg_price","tp_price","step_pts","tp_pts","spread_pts","slippage_pts",
-         "open_count","max_trades","floating_pl","closed_pl_today","equity","margin_free",
-         "reason","err","notes");
+void __es_header() {
+   if(ES_log_handle < 0) return;
+      FileWrite(ES_log_handle,
+      "ts","build","symbol","tf","magic","ticket","event","side","lots","bid","ask","price","last_entry_price","tp_price","spread_pts","open_count","floating_pl","closed_pl_today","equity","balance","margin_free","reason","err","notes");
+FileFlush(ES_log_handle);
+}
+
+void __es_open_if_needed() {
+   if(ES_log_magic <= 0) return; // postpone until magic is known
+   static string opened_name = "";
+   string fname = __es_filename();
+   if(ES_log_handle >= 0 && opened_name == fname) return;
+   if(ES_log_handle >= 0) { FileClose(ES_log_handle); ES_log_handle = -1; }
+   ES_log_handle = FileOpen(fname, FILE_CSV|FILE_READ|FILE_WRITE|FILE_SHARE_WRITE, ';');
+   if(ES_log_handle >= 0) {
+      opened_name = fname;
+      int sz = (int)FileSize(ES_log_handle);
+      FileSeek(ES_log_handle, 0, SEEK_END);
+      if(sz == 0) __es_header();
    }
 }
 
-void LogSetLevel(int level) { ES__log_level = MathMax(ES_LOG_NONE, MathMin(ES_LOG_TRACE, level)); }
-int  LogGetLevel() { return(ES__log_level); }
-void LogSetLabel(string label) { ES__label = label; }
+// -------- Public API used by EA --------
+void LogSetLevel(int level) { ES_log_level = level; }
+void LogSetLabel(string label) { ES_log_label = label; __es_open_if_needed(); }
+void LogSetMagic(int magic) { ES_log_magic = magic; __es_open_if_needed(); }
 
-void LogInit(string sym, int magic, int build, string tf, int spread_pts, int slippage_pts) {
-   ES__symbol = sym; ES__magic = magic; ES__build = build; ES__tf = tf;
-   ES__profile_spread_pts = spread_pts; ES__profile_slip_pts = slippage_pts;
-
-   string base = StringFormat("EuroScalper_%s_%s_%d_%d", sym, tf, magic, build);
-   ES__log_filename = (StringLen(ES__label)>0 ? base + "_" + ES__label + ".csv" : base + ".csv");
-
-   string preferred = "EuroScalper\\logs\\" + ES__log_filename; // under MQL4/Files
-   ES__log_handle = FileOpen(preferred, FILE_CSV|FILE_READ|FILE_WRITE|FILE_ANSI);
-   if(ES__log_handle < 0) { ES__flat_path = true; ES__log_handle = FileOpen(ES__log_filename, FILE_CSV|FILE_READ|FILE_WRITE|FILE_ANSI); }
-   if(ES__log_handle < 0) return;
-   ES__WriteHeader();
+void LogInit(string symbol, int magic, int build, string tf, int spread_pts, int slippage_pts) {
+   ES_log_symbol    = symbol;
+   ES_log_magic     = magic;
+   ES_log_build     = build;
+   ES_log_tf        = tf;
+   ES_log_spread_pts= spread_pts;
+   ES_log_slip_pts  = slippage_pts;
+   __es_open_if_needed();
 }
 
-void ES__WriteRow(string event, string side, double lots, double price, double last_entry_price,
-                  double avg_price, double tp_price, int step_pts, int tp_pts, int spread_pts, int slippage_pts,
-                  int open_count, int max_trades, double floating_pl, double closed_pl_today,
-                  double equity, double margin_free, string reason, int err, string notes) {
-   if(ES__log_handle < 0) return;
-   FileWrite(ES__log_handle,
-      ES__NowISO(), ES__build, ES__symbol, ES__tf, ES__magic, 0, event, side, lots, price,
-      last_entry_price, avg_price, tp_price, step_pts, tp_pts, spread_pts, slippage_pts,
-      open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
+// Low-level row writer
+void __es_row_at(datetime ts_at,
+                 string event, string side,
+                 int ticket,
+                 double lots, double price,
+                 double last_entry_price, double avg_price, double tp_price,
+                 int step_pts, int tp_pts, int spread_pts, int slippage_pts,
+                 int open_count, int max_trades,
+                 double floating_pl, double closed_pl_today,
+                 double equity, double margin_free,
+                 string reason, int err, string notes)
+{
+   if(ES_log_level < ES_LOG_BASIC) return;
+   __es_open_if_needed();
+   if(ES_log_handle < 0) return;
+   string ts = TimeToString(ts_at, TIME_DATE|TIME_SECONDS);
+   FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
+             ticket, event, side, lots, Bid, Ask, price, last_entry_price, tp_price,
+             spread_pts, open_count, floating_pl, closed_pl_today, equity, AccountBalance(), margin_free, reason, err, "");
+   FileFlush(ES_log_handle);
 }
 
-void LogEvent(string event, string side, double lots, double price, double last_entry_price,
-              double avg_price, double tp_price, int step_pts, int tp_pts, int spread_pts, int slippage_pts,
-              int open_count, int max_trades, double floating_pl, double closed_pl_today,
-              double equity, double margin_free, string reason, int err, string notes) {
-   if(ES__log_level < ES_LOG_BASIC) return;
-   ES__WriteRow(event, side, lots, price, last_entry_price, avg_price, tp_price, step_pts, tp_pts, spread_pts, slippage_pts,
-                open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
+// Convenience wrappers
+void LogEventAt(datetime ts_at, string event, string side, int ticket,
+                double lots, double price,
+                double last_entry_price, double avg_price, double tp_price,
+                int step_pts, int tp_pts, int spread_pts, int slippage_pts,
+                int open_count, int max_trades,
+                double floating_pl, double closed_pl_today,
+                double equity, double margin_free,
+                string reason, int err, string notes)
+{
+   __es_row_at(ts_at, event, side, ticket, lots, price, last_entry_price, avg_price, tp_price,
+               step_pts, tp_pts, spread_pts, slippage_pts,
+               open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
 }
 
-void LogEventDebug(string event, string side, double lots, double price, double last_entry_price,
-                   double avg_price, double tp_price, int step_pts, int tp_pts, int spread_pts, int slippage_pts,
-                   int open_count, int max_trades, double floating_pl, double closed_pl_today,
-                   double equity, double margin_free, string reason, int err, string notes) {
-   if(ES__log_level < ES_LOG_DEBUG) return;
-   ES__WriteRow(event, side, lots, price, last_entry_price, avg_price, tp_price, step_pts, tp_pts, spread_pts, slippage_pts,
-                open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
+void LogEvent(string event, string side, int ticket,
+              double lots, double price,
+              double last_entry_price, double avg_price, double tp_price,
+              int step_pts, int tp_pts, int spread_pts, int slippage_pts,
+              int open_count, int max_trades,
+              double floating_pl, double closed_pl_today,
+              double equity, double margin_free,
+              string reason, int err, string notes)
+{
+   __es_row_at(TimeCurrent(), event, side, ticket, lots, price, last_entry_price, avg_price, tp_price,
+               step_pts, tp_pts, spread_pts, slippage_pts,
+               open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
 }
 
-void LogEventTrace(string event, string side, double lots, double price, double last_entry_price,
-                   double avg_price, double tp_price, int step_pts, int tp_pts, int spread_pts, int slippage_pts,
-                   int open_count, int max_trades, double floating_pl, double closed_pl_today,
-                   double equity, double margin_free, string reason, int err, string notes) {
-   if(ES__log_level < ES_LOG_TRACE) return;
-   ES__WriteRow(event, side, lots, price, last_entry_price, avg_price, tp_price, step_pts, tp_pts, spread_pts, slippage_pts,
-                open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
+void LogNote(string event, string reason, string notes) {
+   __es_row_at(TimeCurrent(), event, "", 0, 0, 0, 0, 0, 0,
+               0, 0, ES_log_spread_pts, ES_log_slip_pts,
+               0, 0, 0, 0, AccountEquity(), AccountFreeMargin(), reason, 0, notes);
 }
 
-void LogNote(string event, string side, string notes) {
-   if(ES__log_level < ES_LOG_BASIC) return;
-   ES__WriteRow(event, side, 0, 0, 0, 0, 0, 0, 0, ES__profile_spread_pts, ES__profile_slip_pts,
-                0, 0, 0, 0, AccountEquity(), AccountFreeMargin(), "", 0, notes + (ES__flat_path? " (flat_path)" : ""));
-}
-
-#endif // __EUROSCALPER_LOGGER_MQH__
+#endif // ES_LOGGER_MQH_INCLUDED

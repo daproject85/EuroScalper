@@ -1,59 +1,38 @@
 // --- Logging includes (added; behavior-neutral)
 #include <EuroScalper/logging/Logger.mqh>
+#include <EuroScalper/logging/Audit.mqh>
 #include <EuroScalper/core/Normalize.mqh>
 #include <EuroScalper/core/MagicMap.mqh>
 
-extern int ES_LogLevel = 3; // 0=NONE,1=BASIC,2=DEBUG,3=TRACE
-
+extern int ES_LogLevelInput = 1;
 // --- Instrumentation helpers (behavior-neutral) [2025-09-01T04:24:34Z]
 int ES_prev_buy_count = -1;
 int ES_prev_sell_count = -1;
 
-void ES_LogInit(string sym, int magic) {LogSetLevel(ES_LogLevel);
+void ES_LogInit(string sym, int magic) {
    LogSetLabel("BASELINE");
+   LogSetLevel(ES_LogLevelInput);
    LogInit(sym, magic, 1143, "M"+IntegerToString(Period()), 2, -1);
-   LogNote("boot","started","tester profile: build=1143, spread=2pts, slippage=match_baseline");
 }
 void ES_LogDeinit() { LogNote("deinit","stop",""); }
-
 
 void ES_LogTick(string sym, int magic, int step_pts, int tp_pts, int max_trades) {
    string tf = "M" + IntegerToString(Period());
    int spread_pts = (int)MarketInfo(sym, MODE_SPREAD);
    double eq = AccountEquity();
    double fm = AccountFreeMargin();
+   // lightweight observation: counts only
    int buy_count=0, sell_count=0;
-
-   for(int i=0; i<OrdersTotal(); i++) {
-      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) {
-         if(OrderSymbol()==sym && OrderMagicNumber()==magic) {
-            if(OrderType()==OP_BUY)  buy_count++;
+   for(int i=0;i<OrdersTotal();i++) if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) {
+        if(OrderSymbol()==sym && OrderMagicNumber()==magic) {
+            if(OrderType()==OP_BUY) buy_count++;
             if(OrderType()==OP_SELL) sell_count++;
-         }
-      }
+        }
    }
-
-   // BASIC: count change (entry/close inferred)
-   if(ES_prev_buy_count>=0 && buy_count!=ES_prev_buy_count)
-      LogEvent((buy_count>ES_prev_buy_count? "entry_open":"close_ok"),"BUY",0,0,0,0,0, step_pts,tp_pts,spread_pts,-1, 0,max_trades,0,0,eq,fm,"count_change",0,"");
-   if(ES_prev_sell_count>=0 && sell_count!=ES_prev_sell_count)
-      LogEvent((sell_count>ES_prev_sell_count? "entry_open":"close_ok"),"SELL",0,0,0,0,0, step_pts,tp_pts,spread_pts,-1, 0,max_trades,0,0,eq,fm,"count_change",0,"");
-
-   ES_prev_buy_count=buy_count;
-   ES_prev_sell_count=sell_count;
-
-   // DEBUG: tick evaluation snapshot
-   if(LogGetLevel()>=ES_LOG_DEBUG) {
-      LogEventDebug("tick_eval",".",0,0,0,0,0, step_pts, tp_pts, spread_pts, -1,
-                    buy_count+sell_count, max_trades, 0, 0, eq, fm, "counts_only", 0, "");
-   }
-   // TRACE: pipeline breadcrumb (lightweight)
-   if(LogGetLevel()>=ES_LOG_TRACE) {
-      LogEventTrace("pipeline",".",0,0,0,0,0, step_pts, tp_pts, spread_pts, -1,
-                    buy_count+sell_count, max_trades, 0, 0, eq, fm, "scan", 0, "");
-   }
+   if(ES_prev_buy_count>=0 && buy_count!=ES_prev_buy_count) LogNote(buy_count>ES_prev_buy_count? "entry_open":"close_ok","BUY","count change");
+   if(ES_prev_sell_count>=0 && sell_count!=ES_prev_sell_count) LogNote(sell_count>ES_prev_sell_count? "entry_open":"close_ok","SELL","count change");
+   ES_prev_buy_count=buy_count; ES_prev_sell_count=sell_count;
 }
-
 
 //+------------------------------------------------------------------+
 //|                                                      
@@ -359,6 +338,7 @@ double returned_double;
 //+------------------------------------------------------------------+
 int init() {
    ES_LogInit(Symbol(), /*magic*/0);
+   ES_Audit_Init(Symbol(), /*magic*/0);
 
    I_s_2 = "Euro Scalper";
    I_d_67 = 2;
@@ -493,7 +473,10 @@ int init() {
    if (I_i_0 == 0) {
       I_i_0 = 999999;
    }
-   I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
+      LogSetMagic(I_i_0);
+   ES_Audit_Init(Symbol(), I_i_0);
+   LogNote("boot","started","tester profile: build=1143, spread=2pts, slippage=match_baseline");
+I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
    L_i_15 = 0;
    return 0;
 }
@@ -503,6 +486,8 @@ int init() {
 //+------------------------------------------------------------------+
 int start() {
    ES_LogTick(Symbol(), /*magic*/0, (int)Step, (int)TakeProfit, MaxTrades);
+   ES_Audit_OnTick((int)Step, (int)TakeProfit, MaxTrades);
+
 
    string S_s_20;
    string S_s_21;
@@ -765,10 +750,10 @@ int start() {
                if (OrderSymbol() == _Symbol) {
                   if (OrderSymbol() == _Symbol && OrderMagicNumber() == I_i_71) {
                      if (OrderType() == OP_BUY) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
                      }
                      if (OrderType() == OP_SELL) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
                      }
                   }
                   Sleep(1000);
@@ -803,10 +788,10 @@ int start() {
                if (OrderSymbol() == _Symbol) {
                   if (OrderSymbol() == _Symbol && OrderMagicNumber() == I_i_71) {
                      if (OrderType() == OP_BUY) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
                      }
                      if (OrderType() == OP_SELL) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
                      }
                   }
                   Sleep(1000);
@@ -885,6 +870,8 @@ int start() {
    I_d_46 = TakeProfit;
    I_d_47 = Step;
    I_i_71 = I_i_0;
+   LogSetMagic(I_i_71);
+   ES_Audit_Init(Symbol(), I_i_71);
    L_s_1 = "false";
    L_s_2 = "false";
    G_i_75 = I_b_11;
@@ -914,10 +901,10 @@ int start() {
                if (OrderSymbol() == _Symbol) {
                   if (OrderSymbol() == _Symbol && OrderMagicNumber() == I_i_71) {
                      if (OrderType() == OP_BUY) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
                      }
                      if (OrderType() == OP_SELL) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
                      }
                   }
                   Sleep(1000);
@@ -977,10 +964,10 @@ int start() {
                if (OrderSymbol() == _Symbol) {
                   if (OrderSymbol() == _Symbol && OrderMagicNumber() == I_i_71) {
                      if (OrderType() == OP_BUY) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Bid, (int)I_d_34, 16711680);
                      }
                      if (OrderType() == OP_SELL) {
-                        I_b_7 = OrderClose(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
+                        I_b_7 = ES_OrderCloseLogged(OrderTicket(), OrderLots(), Ask, (int)I_d_34, 255);
                      }
                   }
                   Sleep(1000);
@@ -1919,7 +1906,7 @@ int start() {
       I_b_7 = OrderSelect(I_i_84, 0, 0);
       if (OrderSymbol() == _Symbol && OrderMagicNumber() == I_i_71) {
          if (OrderSymbol() == _Symbol && OrderMagicNumber() == I_i_71) {
-            I_b_7 = OrderModify(OrderTicket(), I_d_48, OrderStopLoss(), I_d_80, 0, 65535);
+            I_b_7 = ES_OrderModifyLogged(OrderTicket(), I_d_48, OrderStopLoss(), I_d_80, 0, 65535);
          }
          I_b_16 = false;
       }
@@ -1966,7 +1953,7 @@ int f0_1(bool FuncArg_Boolean_00000000, bool FuncArg_Boolean_00000001) {
          if (OrderType() == OP_BUY && FuncArg_Boolean_00000000) {
             RefreshRates();
             if (!IsTradeContextBusy()) {
-               if (!OrderClose(OrderTicket(), OrderLots(), NormalizeDouble(Bid, _Digits), 5, 4294967295)) {
+               if (!ES_OrderCloseLogged(OrderTicket(), OrderLots(), NormalizeDouble(Bid, _Digits), 5, 4294967295)) {
                   S_s_20 = (string)OrderTicket();
                   S_s_20 = "Error close BUY " + S_s_20;
                   Print(S_s_20);
@@ -1991,7 +1978,7 @@ int f0_1(bool FuncArg_Boolean_00000000, bool FuncArg_Boolean_00000001) {
          if (OrderType() == OP_SELL && FuncArg_Boolean_00000001) {
             RefreshRates();
             if (!IsTradeContextBusy()) {
-               if (!OrderClose(OrderTicket(), OrderLots(), NormalizeDouble(Ask, _Digits), 5, 4294967295)) {
+               if (!ES_OrderCloseLogged(OrderTicket(), OrderLots(), NormalizeDouble(Ask, _Digits), 5, 4294967295)) {
                   S_s_22 = (string)OrderTicket();
                   S_s_22 = "Error close SELL " + S_s_22;
                   Print(S_s_22);
@@ -2096,7 +2083,7 @@ int f0_15(int Fa_i_00, double Fa_d_01, double Fa_d_02, int Fa_i_03, double Fa_d_
             G_d_10 = (G_i_3 * _Point);
             G_d_2 = (G_d_106 - G_d_10);
          }
-         L_i_11 = OrderSend(_Symbol, 2, Fa_d_01, Fa_d_02, Fa_i_03, G_d_2, G_d_3, Fa_s_07, Fa_i_08, Fa_i_09, G_i_31);
+         L_i_11 = ES_OrderSendLogged(_Symbol, 2, Fa_d_01, Fa_d_02, Fa_i_03, G_d_2, G_d_3, Fa_s_07, Fa_i_08, Fa_i_09, G_i_31);
          if (L_i_11 > 0) {
             I_i_76 = I_i_76 + 1;
          }
@@ -2139,7 +2126,7 @@ int f0_15(int Fa_i_00, double Fa_d_01, double Fa_d_02, int Fa_i_03, double Fa_d_
             G_d_128 = (G_i_8 * _Point);
             G_d_109 = (G_d_110 - G_d_128);
          }
-         L_i_11 = OrderSend(_Symbol, 4, Fa_d_01, Fa_d_02, Fa_i_03, G_d_109, G_d_111, Fa_s_07, Fa_i_08, Fa_i_09, G_i_33);
+         L_i_11 = ES_OrderSendLogged(_Symbol, 4, Fa_d_01, Fa_d_02, Fa_i_03, G_d_109, G_d_111, Fa_s_07, Fa_i_08, Fa_i_09, G_i_33);
          if (L_i_11 > 0) {
             I_i_76 = I_i_76 + 1;
          }
@@ -2183,7 +2170,7 @@ int f0_15(int Fa_i_00, double Fa_d_01, double Fa_d_02, int Fa_i_03, double Fa_d_
             G_d_13 = (G_i_14 * _Point);
             G_d_113 = (G_d_114 - G_d_13);
          }
-         L_i_11 = OrderSend(_Symbol, 0, Fa_d_01, Ask, Fa_i_03, G_d_113, G_d_115, Fa_s_07, Fa_i_08, Fa_i_09, G_i_36);
+         L_i_11 = ES_OrderSendLogged(_Symbol, 0, Fa_d_01, Ask, Fa_i_03, G_d_113, G_d_115, Fa_s_07, Fa_i_08, Fa_i_09, G_i_36);
          if (L_i_11 > 0) {
             I_i_76 = I_i_76 + 1;
          }
@@ -2226,7 +2213,7 @@ int f0_15(int Fa_i_00, double Fa_d_01, double Fa_d_02, int Fa_i_03, double Fa_d_
          } else {
             G_d_116 = ((G_i_19 * _Point) + G_d_117);
          }
-         L_i_11 = OrderSend(_Symbol, 3, Fa_d_01, Fa_d_02, Fa_i_03, G_d_116, G_d_118, Fa_s_07, Fa_i_08, Fa_i_09, G_i_38);
+         L_i_11 = ES_OrderSendLogged(_Symbol, 3, Fa_d_01, Fa_d_02, Fa_i_03, G_d_116, G_d_118, Fa_s_07, Fa_i_08, Fa_i_09, G_i_38);
          if (L_i_11 > 0) {
             I_i_76 = I_i_76 + 1;
          }
@@ -2269,7 +2256,7 @@ int f0_15(int Fa_i_00, double Fa_d_01, double Fa_d_02, int Fa_i_03, double Fa_d_
          } else {
             G_d_119 = ((G_i_139 * _Point) + G_d_120);
          }
-         L_i_11 = OrderSend(_Symbol, 5, Fa_d_01, Fa_d_02, Fa_i_03, G_d_119, G_d_121, Fa_s_07, Fa_i_08, Fa_i_09, G_i_41);
+         L_i_11 = ES_OrderSendLogged(_Symbol, 5, Fa_d_01, Fa_d_02, Fa_i_03, G_d_119, G_d_121, Fa_s_07, Fa_i_08, Fa_i_09, G_i_41);
          if (L_i_11 > 0) {
             I_i_76 = I_i_76 + 1;
          }
@@ -2312,7 +2299,7 @@ int f0_15(int Fa_i_00, double Fa_d_01, double Fa_d_02, int Fa_i_03, double Fa_d_
          } else {
             G_d_7 = ((G_i_28 * _Point) + G_d_123);
          }
-         L_i_11 = OrderSend(_Symbol, 1, Fa_d_01, Bid, Fa_i_03, G_d_7, G_d_124, Fa_s_07, Fa_i_08, Fa_i_09, G_i_44);
+         L_i_11 = ES_OrderSendLogged(_Symbol, 1, Fa_d_01, Bid, Fa_i_03, G_d_7, G_d_124, Fa_s_07, Fa_i_08, Fa_i_09, G_i_44);
          if (L_i_11 > 0) {
             I_i_76 = I_i_76 + 1;
          }
@@ -2368,7 +2355,7 @@ void f0_18(int Fa_i_00, int Fa_i_01, double Fa_d_02) {
                G_d_2 = (Fa_i_01 * _Point);
                L_d_14 = (Bid - G_d_2);
                if (returned_double == 0 || (returned_double != 0 && L_d_14 > returned_double)) {
-                  I_b_7 = OrderModify(OrderTicket(), Fa_d_02, L_d_14, OrderTakeProfit(), 0, 16776960);
+                  I_b_7 = ES_OrderModifyLogged(OrderTicket(), Fa_d_02, L_d_14, OrderTakeProfit(), 0, 16776960);
                }
             }
             if (OrderType() == OP_SELL) {
@@ -2379,7 +2366,7 @@ void f0_18(int Fa_i_00, int Fa_i_01, double Fa_d_02) {
                L_d_13 = returned_double;
                L_d_14 = ((Fa_i_01 * _Point) + Ask);
                if (returned_double == 0 || (returned_double != 0 && L_d_14 < returned_double)) {
-                  I_b_7 = OrderModify(OrderTicket(), Fa_d_02, L_d_14, OrderTakeProfit(), 0, 255);
+                  I_b_7 = ES_OrderModifyLogged(OrderTicket(), Fa_d_02, L_d_14, OrderTakeProfit(), 0, 255);
                }
             }
          }
