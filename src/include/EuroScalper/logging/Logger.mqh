@@ -86,39 +86,42 @@ string _lots = (lots == 0.0 ? "" : DoubleToStr(lots, 2));
 string _price= (price == 0.0 ? "" : DoubleToStr(price, 5));
 string _lep  = (last_entry_price == 0.0 ? "" : DoubleToStr(last_entry_price, 5));
 string _tp   = (tp_price == 0.0 ? "" : DoubleToStr(tp_price, 5));
-bool _is_io  = (event == "send_req" || event == "send_ok" || event == "modify_req" || event == "modify_ok" || event == "close_filled");
+// Unify ERR alignment: always 3 blanks after 'reason' before 'err' for ALL events.
+// Keep NOTES shift for dbg_gates & dbg_scan (+3 after err). Force empty notes on req/ok events.
+bool _is_io    = (event == "send_req" || event == "send_ok" || event == "modify_req" || event == "modify_ok" || event == "close_filled");
+bool _dbg_g1   = (event == "dbg_gates");
+bool _dbg_g2   = (event == "dbg_scan");
+bool _bar_dbg3 = (event == "bar_tick_dbg");
+bool _closers3 = (event == "dbg_closers");
+bool _sig      = (event == "dbg_signal");
+bool _notes3   = (_dbg_g1 || _dbg_g2);   // gates/scan: move notes by +3 after err
 
 string _notes = (event == "modify_req" || event == "send_req" || event == "send_ok") ? "" : notes;
-bool _dbg_g1   = (event == "dbg_gates");
-bool _dbg_g2   = (event == "dbg_scan" || event == "bar_tick_dbg");
 
-if(_is_io) {
-   // I/O events: keep 3 blanks after reason
+// sanitize semicolons in reason/notes to keep CSV column count fixed
+string _reason = reason;
+StringReplace(_reason, ";", "|");
+StringReplace(_reason, "\n", " "); // guard accidental breaks
+StringReplace(_reason, "\r", " ");
+string _notes_s = _notes;
+StringReplace(_notes_s, ";", "|");
+StringReplace(_notes_s, "\n", " ");
+StringReplace(_notes_s, "\r", " ");
+// Always 3 blanks between reason and err
+if(_notes3) {
+   // For dbg_gates / dbg_scan: also push notes by +3 after err
    FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
              ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
              spread_pts, open_count, floating_pl, closed_pl_today,
-             equity, AccountBalance(), margin_free, reason, "", "", "", err, _notes);
-} else if(_dbg_g2) {
-   // dbg_scan / bar_tick_dbg: 2 blanks after reason
-   FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
-             ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
-             spread_pts, open_count, floating_pl, closed_pl_today,
-             equity, AccountBalance(), margin_free, reason, "", "", err, _notes);
-} else if(_dbg_g1) {
-   // dbg_gates: 1 blank after reason
-   FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
-             ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
-             spread_pts, open_count, floating_pl, closed_pl_today,
-             equity, AccountBalance(), margin_free, reason, "", err, _notes);
+             equity, AccountBalance(), margin_free, _reason, "", "", "", err, "", "", "", _notes_s);
 } else {
-   // default path: no extra blanks
+   // All other events: 3 blanks then err, notes default
    FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
              ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
              spread_pts, open_count, floating_pl, closed_pl_today,
-             equity, AccountBalance(), margin_free, reason, err, _notes);
+             equity, AccountBalance(), margin_free, _reason, "", "", "", err, _notes_s);
 }
-FileFlush(ES_log_handle);
-}
+FileFlush(ES_log_handle);}
 
 // Convenience wrappers
 void LogEventAt(datetime ts_at, string event, string side, int ticket,
