@@ -29,11 +29,9 @@ string __es_filename() {
 
 void __es_header() {
    if(ES_log_handle < 0) return;
-   FileWrite(ES_log_handle,
-     "ts","build","symbol","tf","magic","ticket","event","side","lots","price",
-     "last_entry_price","avg_price","tp_price","step_pts","tp_pts","spread_pts","slippage_pts",
-     "open_count","max_trades","floating_pl","closed_pl_today","equity","margin_free","reason","err","notes");
-   FileFlush(ES_log_handle);
+      FileWrite(ES_log_handle,
+      "ts","build","symbol","tf","magic","ticket","event","side","lots","bid","ask","price","last_entry_price","tp_price","spread_pts","open_count","floating_pl","closed_pl_today","equity","balance","margin_free","reason","err","notes");
+FileFlush(ES_log_handle);
 }
 
 void __es_open_if_needed() {
@@ -83,9 +81,8 @@ void __es_row_at(datetime ts_at,
    if(ES_log_handle < 0) return;
    string ts = TimeToString(ts_at, TIME_DATE|TIME_SECONDS);
    FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
-             ticket, event, side, lots, price, last_entry_price, avg_price, tp_price,
-             step_pts, tp_pts, spread_pts, slippage_pts,
-             open_count, max_trades, floating_pl, closed_pl_today, equity, margin_free, reason, err, notes);
+             ticket, event, side, lots, Bid, Ask, price, last_entry_price, tp_price,
+             spread_pts, open_count, floating_pl, closed_pl_today, equity, AccountBalance(), margin_free, reason, err, "");
    FileFlush(ES_log_handle);
 }
 

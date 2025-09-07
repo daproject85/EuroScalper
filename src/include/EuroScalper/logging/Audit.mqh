@@ -34,7 +34,7 @@ void ES_Audit_Init(string sym, int magic)
 }
 void ES_Audit_OnTick(int step_pts, int tp_pts, int max_trades)
 {
-   int curr_n=0; int curr_ticket[ES_A_MAX];
+   int curr_n=0; int curr_ticket[ES_A_MAX]={0};
    for(int i=0;i<OrdersTotal() && curr_n<ES_A_MAX;i++){
       if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES)){
          if(OrderSymbol()==ES_A_SYM && OrderMagicNumber()==ES_A_MAGIC){
