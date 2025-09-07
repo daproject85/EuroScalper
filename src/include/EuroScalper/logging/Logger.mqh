@@ -80,10 +80,28 @@ void __es_row_at(datetime ts_at,
    __es_open_if_needed();
    if(ES_log_handle < 0) return;
    string ts = TimeToString(ts_at, TIME_DATE|TIME_SECONDS);
+   string _bid  = DoubleToStr(Bid, 5);
+string _ask  = DoubleToStr(Ask, 5);
+string _lots = (lots == 0.0 ? "" : DoubleToStr(lots, 2));
+string _price= (price == 0.0 ? "" : DoubleToStr(price, 5));
+string _lep  = (last_entry_price == 0.0 ? "" : DoubleToStr(last_entry_price, 5));
+string _tp   = (tp_price == 0.0 ? "" : DoubleToStr(tp_price, 5));
+bool _is_io  = (event == "send_req" || event == "send_ok" || event == "modify_req" || event == "modify_ok" || event == "close_filled");
+
+if(_is_io) {
+   // push err out by 3 blanks AFTER reason for I/O events
    FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
-             ticket, event, side, lots, Bid, Ask, price, last_entry_price, tp_price,
-             spread_pts, open_count, floating_pl, closed_pl_today, equity, AccountBalance(), margin_free, reason, err, "");
-   FileFlush(ES_log_handle);
+             ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
+             spread_pts, open_count, floating_pl, closed_pl_today,
+             equity, AccountBalance(), margin_free, reason, "", "", "", err, notes);
+} else {
+   // default path (BASIC+DEBUG non-I/O): no extra blanks
+   FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
+             ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
+             spread_pts, open_count, floating_pl, closed_pl_today,
+             equity, AccountBalance(), margin_free, reason, err, notes);
+}
+FileFlush(ES_log_handle);
 }
 
 // Convenience wrappers

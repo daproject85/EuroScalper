@@ -504,6 +504,27 @@ I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
 //|                                                                  |
 //+------------------------------------------------------------------+
 int start() {
+   // DEBUG pipeline breadcrumbs (A2): closers -> gates -> scan (additive; ES_LOG_DEBUG only)
+   if(ES_LogLevelInput >= 2){
+      int _oc=0; double _last=0.0; datetime _last_t=0; double _flt=0.0;
+      for(int _i=0; _i<OrdersTotal(); _i++){
+         if(OrderSelect(_i, SELECT_BY_POS, MODE_TRADES) && OrderSymbol()==Symbol()){
+            _oc++;
+            _flt += OrderProfit()+OrderSwap()+OrderCommission();
+            datetime _ot = OrderOpenTime();
+            if(_ot > _last_t){ _last_t=_ot; _last = OrderOpenPrice(); }
+         }
+      }
+      string _c = StringFormat("closers:daily=%d;equity=%d;open=%d;flt=%.2f", Use_Daily_Target, UseEquityStop, _oc, _flt);
+      LogNote("dbg_closers", _c, "");
+
+      string _g = StringFormat("gate:dow=%d;hour=%d;block=0", DayOfWeek(), Hour());
+      LogNote("dbg_gates", _g, "");
+
+      string _s = StringFormat("scan:open_count=%d;last_entry=%.5f", _oc, _last);
+      LogNote("dbg_scan", _s, "");
+   }
+
    // DEBUG determinism anchor (Phase 1): once-per-bar heartbeat
    static datetime ES_bar_last = 0;
    static int ES_bar_seq = 0;
