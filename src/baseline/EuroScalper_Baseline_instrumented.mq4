@@ -338,6 +338,7 @@ double returned_double;
 //+------------------------------------------------------------------+
 int init() {
    ES_LogInit(Symbol(), /*magic*/0);
+   ES_Audit_Init(Symbol(), /*magic*/0);
 
    I_s_2 = "Euro Scalper";
    I_d_67 = 2;
@@ -869,6 +870,8 @@ int start() {
    I_d_46 = TakeProfit;
    I_d_47 = Step;
    I_i_71 = I_i_0;
+   LogSetMagic(I_i_71);
+   ES_Audit_Init(Symbol(), I_i_71);
    L_s_1 = "false";
    L_s_2 = "false";
    G_i_75 = I_b_11;

@@ -3,8 +3,79 @@
 #define __EUROSCALPER_AUDIT_MQH__
 
 /* Keep stubs to satisfy EA includes without altering behavior */
-void ES_Audit_Init(string sym, int magic) { /* no-op */ }
-void ES_Audit_OnTick(int step_pts, int tp_pts, int max_trades) { /* no-op */ }
+static string ES_A_SYM="";
+static int    ES_A_MAGIC=0;
+#ifndef ES_A_MAX
+#define ES_A_MAX 512
+#endif
+static int    ES_A_prev_n=0;
+static int    ES_A_prev_ticket[ES_A_MAX];
+static double ES_A_prev_open[ES_A_MAX];
+static double ES_A_prev_tp[ES_A_MAX];
+static int    ES_A_prev_type[ES_A_MAX];
+static double ES_A_prev_lots[ES_A_MAX];
+
+void ES_Audit_Init(string sym, int magic)
+{
+   ES_A_SYM = sym; ES_A_MAGIC = magic;
+   ES_A_prev_n = 0;
+   for(int i=0;i<OrdersTotal() && ES_A_prev_n<ES_A_MAX;i++){
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES)){
+         if(OrderSymbol()==ES_A_SYM && OrderMagicNumber()==ES_A_MAGIC){
+            ES_A_prev_ticket[ES_A_prev_n] = OrderTicket();
+            ES_A_prev_open  [ES_A_prev_n] = OrderOpenPrice();
+            ES_A_prev_tp    [ES_A_prev_n] = OrderTakeProfit();
+            ES_A_prev_type  [ES_A_prev_n] = OrderType();
+            ES_A_prev_lots  [ES_A_prev_n] = OrderLots();
+            ES_A_prev_n++;
+         }
+      }
+   }
+}
+void ES_Audit_OnTick(int step_pts, int tp_pts, int max_trades)
+{
+   int curr_n=0; int curr_ticket[ES_A_MAX];
+   for(int i=0;i<OrdersTotal() && curr_n<ES_A_MAX;i++){
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES)){
+         if(OrderSymbol()==ES_A_SYM && OrderMagicNumber()==ES_A_MAGIC){
+            curr_ticket[curr_n++] = OrderTicket();
+         }
+      }
+   }
+   for(int p=0;p<ES_A_prev_n;p++){
+      int tk = ES_A_prev_ticket[p];
+      bool still_open=false;
+      for(int c=0;c<curr_n;c++){ if(curr_ticket[c]==tk){ still_open=true; break; } }
+      if(!still_open && tk>0){
+         if(OrderSelect(tk, SELECT_BY_TICKET, MODE_HISTORY)){
+            datetime tclose = OrderCloseTime();
+            double   pclose = OrderClosePrice();
+            string side = (ES_A_prev_type[p]==OP_BUY? "buy" : (ES_A_prev_type[p]==OP_SELL? "sell":""));
+            string reason = (MathAbs(pclose - ES_A_prev_tp[p]) <= (Point*2) && ES_A_prev_tp[p]>0) ? "hit_tp" : "closed";
+            LogEventAt(tclose, "close_filled", side, tk,
+                       ES_A_prev_lots[p], pclose,
+                       ES_A_prev_open[p], 0, ES_A_prev_tp[p],
+                       step_pts, tp_pts, (int)MarketInfo(ES_A_SYM, MODE_SPREAD), -1,
+                       0, max_trades,
+                       0, 0,
+                       AccountEquity(), AccountFreeMargin(), reason, 0, "");
+         }
+      }
+   }
+   ES_A_prev_n = 0;
+   for(int i2=0;i2<OrdersTotal() && ES_A_prev_n<ES_A_MAX;i2++){
+      if(OrderSelect(i2, SELECT_BY_POS, MODE_TRADES)){
+         if(OrderSymbol()==ES_A_SYM && OrderMagicNumber()==ES_A_MAGIC){
+            ES_A_prev_ticket[ES_A_prev_n] = OrderTicket();
+            ES_A_prev_open  [ES_A_prev_n] = OrderOpenPrice();
+            ES_A_prev_tp    [ES_A_prev_n] = OrderTakeProfit();
+            ES_A_prev_type  [ES_A_prev_n] = OrderType();
+            ES_A_prev_lots  [ES_A_prev_n] = OrderLots();
+            ES_A_prev_n++;
+         }
+      }
+   }
+}
 
 // ---- Forensic wrappers ----
 // Logs exact request parameters and broker reply for full fidelity.
