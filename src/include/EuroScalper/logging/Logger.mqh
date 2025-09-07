@@ -88,18 +88,34 @@ string _lep  = (last_entry_price == 0.0 ? "" : DoubleToStr(last_entry_price, 5))
 string _tp   = (tp_price == 0.0 ? "" : DoubleToStr(tp_price, 5));
 bool _is_io  = (event == "send_req" || event == "send_ok" || event == "modify_req" || event == "modify_ok" || event == "close_filled");
 
+string _notes = (event == "modify_req" || event == "send_req" || event == "send_ok") ? "" : notes;
+bool _dbg_g1   = (event == "dbg_gates");
+bool _dbg_g2   = (event == "dbg_scan" || event == "bar_tick_dbg");
+
 if(_is_io) {
-   // push err out by 3 blanks AFTER reason for I/O events
+   // I/O events: keep 3 blanks after reason
    FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
              ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
              spread_pts, open_count, floating_pl, closed_pl_today,
-             equity, AccountBalance(), margin_free, reason, "", "", "", err, notes);
+             equity, AccountBalance(), margin_free, reason, "", "", "", err, _notes);
+} else if(_dbg_g2) {
+   // dbg_scan / bar_tick_dbg: 2 blanks after reason
+   FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
+             ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
+             spread_pts, open_count, floating_pl, closed_pl_today,
+             equity, AccountBalance(), margin_free, reason, "", "", err, _notes);
+} else if(_dbg_g1) {
+   // dbg_gates: 1 blank after reason
+   FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
+             ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
+             spread_pts, open_count, floating_pl, closed_pl_today,
+             equity, AccountBalance(), margin_free, reason, "", err, _notes);
 } else {
-   // default path (BASIC+DEBUG non-I/O): no extra blanks
+   // default path: no extra blanks
    FileWrite(ES_log_handle, ts, ES_log_build, ES_log_symbol, ES_log_tf, ES_log_magic,
              ticket, event, side, _lots, _bid, _ask, _price, _lep, _tp,
              spread_pts, open_count, floating_pl, closed_pl_today,
-             equity, AccountBalance(), margin_free, reason, err, notes);
+             equity, AccountBalance(), margin_free, reason, err, _notes);
 }
 FileFlush(ES_log_handle);
 }
