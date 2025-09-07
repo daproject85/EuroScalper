@@ -523,7 +523,59 @@ int start() {
 
       string _s = StringFormat("scan:open_count=%d;last_entry=%.5f", _oc, _last);
       LogNote("dbg_scan", _s, "");
-   }
+   
+      // --- A3: Direction decision packet (minimal, logging-only) ---
+      int    _spr   = (int)MarketInfo(Symbol(), MODE_SPREAD);
+      int    _mx    = (int)MaxTrades;
+      int    _step  = (int)Step;
+      double _open0 = Open[0];
+      int    _dist  = (_oc > 0 && _last > 0 ? (int)MathRound(MathAbs(_open0 - _last)/Point) : 0);
+
+      string _in = StringFormat(
+         "in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;dist_from_last_pts=%d",
+         _spr, _oc, _mx, _last, _step, _dist
+      );
+      LogNote("dbg_signal_in", _in, "");
+
+      // Decide grid direction intent purely from grid state (no TA): seed vs add
+      string _dir  = "NONE";
+      string _rule = (_oc == 0 ? "grid_seed" : "grid_add");
+      int    _add_allowed = 0;     // 1 iff distance >= Step in the appropriate side
+      int    _ok = 0;              // 1 iff actionable, 0 if suppressed
+      string _why = "";            // reason when _ok == 0
+
+      // Count current sides for this symbol (magic may be 0 in this build)
+      int _buy_count = 0, _sell_count = 0;
+      for(int ii=0; ii<OrdersTotal(); ii++) if(OrderSelect(ii, SELECT_BY_POS, MODE_TRADES)){
+         if(OrderSymbol()==Symbol()){
+            if(OrderType()==OP_BUY)  _buy_count++;
+            if(OrderType()==OP_SELL) _sell_count++;
+         }
+      }
+
+      if(_oc > 0){
+         // Grid add rules at bar open
+         if(_buy_count > 0){
+            if( (_last - _open0) / Point >= _step ){ _dir = "BUY";  _add_allowed = 1; }
+         } else if(_sell_count > 0){
+            if( (_open0 - _last) / Point >= _step ){ _dir = "SELL"; _add_allowed = 1; }
+         }
+         if(_oc >= _mx){ _ok = 0; _why = "max_trades"; }
+         else if(_add_allowed == 1){ _ok = 1; }
+         else { _ok = 0; _why = "step"; }
+      } else {
+         // No basket open: we don’t seed here (logging-only visibility)
+         _dir = "NONE"; _ok = 0; _why = "seed";
+      }
+
+      string _sig;
+      if(_ok==1)
+         _sig = StringFormat("dir=%s;rule=%s;add_allowed=%d;ok=1", _dir, _rule, _add_allowed);
+      else
+         _sig = StringFormat("dir=%s;rule=%s;add_allowed=%d;ok=0;why=%s", _dir, _rule, _add_allowed, _why);
+      LogNote("dbg_signal", _sig, "");
+      // --- end A3 ---
+}
 
    // DEBUG determinism anchor (Phase 1): once-per-bar heartbeat
    static datetime ES_bar_last = 0;
