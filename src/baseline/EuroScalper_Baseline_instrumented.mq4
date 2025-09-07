@@ -13,6 +13,25 @@ void ES_LogInit(string sym, int magic) {
    LogSetLabel("BASELINE");
    LogSetLevel(ES_LogLevelInput);
    LogInit(sym, magic, 1143, "M"+IntegerToString(Period()), 2, -1);
+   if(ES_LogLevelInput >= 2) {
+      string _env = StringFormat("env:digits=%d;point=%G;lotstep=%G;minlot=%G;maxlot=%G;stoplevel=%d;build=%d;profile=Tester;spread_mode=%s",
+                                 Digits, Point, MarketInfo(sym, MODE_LOTSTEP), MarketInfo(sym, MODE_MINLOT),
+                                 MarketInfo(sym, MODE_MAXLOT), (int)MarketInfo(sym, MODE_STOPLEVEL),
+                                 1143, "fixed");
+      LogNote("boot_dbg", _env, "");
+
+      int _open_count = 0;
+      for(int i=0;i<OrdersTotal();i++){
+         if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES)){
+            if(OrderSymbol()==sym){
+               _open_count++;
+            }
+         }
+      }
+      string _rest = StringFormat("restored:open_count=%d;last_balance=%.2f", _open_count, AccountBalance());
+      LogNote("dbg_restore", _rest, "");
+   }
+
 }
 void ES_LogDeinit() { LogNote("deinit","stop",""); }
 
@@ -485,6 +504,17 @@ I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
 //|                                                                  |
 //+------------------------------------------------------------------+
 int start() {
+   // DEBUG determinism anchor (Phase 1): once-per-bar heartbeat
+   static datetime ES_bar_last = 0;
+   static int ES_bar_seq = 0;
+   datetime _bar = iTime(Symbol(), Period(), 0);
+   if(_bar != ES_bar_last){
+      ES_bar_last = _bar;
+      ES_bar_seq++;
+      string _hb = StringFormat("bar=M%d;seq=%d", Period(), ES_bar_seq);
+      if(ES_LogLevelInput >= 2) LogNote("bar_tick_dbg", _hb, "");
+   }
+
    ES_LogTick(Symbol(), /*magic*/0, (int)Step, (int)TakeProfit, MaxTrades);
    ES_Audit_OnTick((int)Step, (int)TakeProfit, MaxTrades);
 
