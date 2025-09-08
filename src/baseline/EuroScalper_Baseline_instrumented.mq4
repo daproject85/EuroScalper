@@ -528,14 +528,10 @@ int start() {
       int    _spr   = (int)MarketInfo(Symbol(), MODE_SPREAD);
       int    _mx    = (int)MaxTrades;
       int    _step  = (int)Step;
-      double _open0 = Open[0];
-      int    _dist  = (_oc > 0 && _last > 0 ? (int)MathRound(MathAbs(_open0 - _last)/Point) : 0);
-
-      string _in = StringFormat(
-         "in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;dist_from_last_pts=%d",
-         _spr, _oc, _mx, _last, _step, _dist
-      );
-      LogNote("dbg_signal_in", _in, "");
+      double _open_bid = Open[0];
+      double _open_ask = _open_bid + _spr*Point;
+      double _open0 = _open_bid;
+      int    _dist = 0;
 
       // Decide grid direction intent purely from grid state (no TA): seed vs add
       string _dir  = "NONE";
@@ -553,7 +549,28 @@ int start() {
          }
       }
 
-      if(_oc > 0){
+      
+
+// Side-aware spacing distance at bar open:
+if(_oc > 0 && _last > 0){
+   if(_buy_count > 0){
+      // BUY basket: compare entry Ask to bar-open Ask
+      _dist = (int)MathMax(0, MathRound((_last - _open_ask) / Point));
+   } else if(_sell_count > 0){
+      // SELL basket: compare bar-open Bid to entry Bid
+      _dist = (int)MathMax(0, MathRound((_open_bid - _last) / Point));
+   } else {
+      _dist = (int)MathMax(0, MathRound(MathAbs(_open_bid - _last) / Point)); // fallback
+   }
+}
+
+
+      string _in = StringFormat(
+         "in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;open_px=%.5f|dist_from_last_pts=%d",
+         _spr, _oc, _mx, _last, _step, (_buy_count>0 ? _open_ask : _open_bid), _dist
+      );
+      LogNote("dbg_signal_in", _in, "");
+if(_oc > 0){
          // Grid add rules at bar open
          if(_buy_count > 0){
             if( (_last - _open0) / Point >= _step ){ _dir = "BUY";  _add_allowed = 1; }
