@@ -8,10 +8,34 @@
 #include <EuroScalper/logging/Logger.mqh>
 #include <EuroScalper/core/Normalize.mqh>
 
-// ---------------- Inputs (minimal) ----------------
-extern int    ES_LogLevelInput = 2;   // 0=none,1=basic,2=debug
-extern int    MaxTrades = 47;
-extern int    Step      = 15;
+// ---------------- Inputs (parity with baseline) ----------------
+extern int ES_LogLevelInput = 1;
+extern string Minimal_Deposit = "$200";
+extern string Time_Frame = "Time Frame M1";
+extern string Pairs = "EurUsd";
+extern bool Use_Daily_Target = true;
+extern double Daily_Target = 100;
+extern bool Hidden_TP = true;
+extern double Hiden_TP = 500;
+extern double Lot = 0.01;
+extern double LotMultiplikator = 1.21;
+extern double TakeProfit = 34;
+extern double Step = 21;
+extern double Averaging = 1;
+extern int MaxTrades = 31;
+extern bool UseEquityStop;
+extern double TotalEquityRisk = 20;
+extern int Open_Hour;
+extern int Close_Hour = 23;
+extern bool TradeOnThursday = true;
+extern int Thursday_Hour = 12;
+extern bool TradeOnFriday = true;
+extern int Friday_Hour = 20;
+extern bool Filter_Sideway = true;
+extern bool Filter_News = true;
+extern bool invisible_mode = true;
+extern double OpenRangePips = 1;
+extern double MaxDailyRange = 20000;
 
 // ---------------- State ----------------
 datetime ES_prev_bar_ts = 0;
@@ -76,6 +100,28 @@ int init() {
    ES_magic = ES_ResolveMagic();
    LogSetMagic(ES_magic);
 
+// Phase 1 unit/normalization checks (acceptance: log-only)
+if (LogGetLevel() >= ES_LOG_BASIC) {
+   double _p   = Point;
+   int    _d   = Digits;
+   double lotstep = MarketInfo(Symbol(), MODE_LOTSTEP);
+   double minlot  = MarketInfo(Symbol(), MODE_MINLOT);
+   double maxlot  = MarketInfo(Symbol(), MODE_MAXLOT);
+   double probe_lot = 0.037;
+   // Normalize lot: round to step and clamp [min,max]
+   double norm_lot = probe_lot;
+   if (lotstep > 0) norm_lot = MathRound(probe_lot/lotstep)*lotstep;
+   if (norm_lot < minlot) norm_lot = minlot;
+   if (maxlot > 0 && norm_lot > maxlot) norm_lot = maxlot;
+   // Points <-> price demo using Step
+   int step_pts_chk = (int)MathRound(Step);
+   double px_up = NormalizeDouble(Bid + step_pts_chk * Point, Digits);
+   int back_pts = (int)MathRound((px_up - Bid)/Point);
+   string nc = StringFormat("norm:pnt=%.10f;digits=%d;lotstep=%.3f;minlot=%.2f;maxlot=%.2f;probe=%.3f->norm=%.3f;stop_lvl_pts=%d;back_pts=%d",
+                            _p, _d, lotstep, minlot, maxlot, probe_lot, norm_lot, (int)MarketInfo(Symbol(), MODE_STOPLEVEL), back_pts);
+}
+
+
    // Boot row
    if (LogGetLevel() >= ES_LOG_BASIC) {
       string r = StringFormat("boot:app=Euroscalper_rewrite|build=%d|log_suffix=_REWRITE|magic=%d", 1143, ES_magic);
@@ -91,7 +137,7 @@ int deinit() {
 
 int start() {
    // Per tick; do not trade in Phase 0
-   ES_BarTickDbg();
+   
 
    if (LogGetLevel() >= ES_LOG_DEBUG) {
       // dbg_closers
@@ -111,11 +157,11 @@ int start() {
 
       // dbg_signal_in (inputs snapshot similar to baseline)
       int max_trades = MaxTrades;
-      int step_pts   = Step;
+      int step_pts   = (int)Step;
       int spread_pts = (int)MathRound((Ask - Bid)/Point);
       double open_px = Ask;
       int dist_pts = (last > 0.0) ? (int)MathAbs((open_px - last)/Point) : 0;
-      string si = StringFormat("in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;dist_from_last_pts=%d", spread_pts, oc, max_trades, last, step_pts, dist_pts);
+      string si = StringFormat("in:bar_ago=0|spread_pts=%d|open_count=%d|max_trades=%d|last_entry=%.5f|step=%d|dist_from_last_pts=%d", spread_pts, oc, max_trades, last, step_pts, dist_pts);
       LogNote("dbg_signal_in", si, "");
 
       // dbg_signal (no trading; deterministic seed rule echo)
@@ -130,5 +176,6 @@ int start() {
       }
       LogNote("dbg_signal", sd, "");
    }
+   ES_BarTickDbg();
    return 0;
 }
