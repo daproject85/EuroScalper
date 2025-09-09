@@ -10,6 +10,8 @@
 
 // ---------------- Inputs (minimal) ----------------
 extern int    ES_LogLevelInput = 2;   // 0=none,1=basic,2=debug
+extern int    MaxTrades = 47;
+extern int    Step      = 15;
 
 // ---------------- State ----------------
 datetime ES_prev_bar_ts = 0;
@@ -59,7 +61,7 @@ void ES_BarTickDbg() {
       ES_prev_bar_ts = bar_ts;
       ES_bar_seq++;
       string hb = StringFormat("bar=M%d;seq=%d", Period(), ES_bar_seq);
-      if (ES_LogLevelInput >= 2) LogNote("bar_tick_dbg", hb, "");
+      if (LogGetLevel() >= ES_LOG_DEBUG) LogNote("bar_tick_dbg", hb, "");
    }
 }
 
@@ -75,7 +77,7 @@ int init() {
    LogSetMagic(ES_magic);
 
    // Boot row
-   if (ES_LogLevelInput >= 1) {
+   if (LogGetLevel() >= ES_LOG_BASIC) {
       string r = StringFormat("boot:app=Euroscalper_rewrite|build=%d|log_suffix=_REWRITE|magic=%d", 1143, ES_magic);
       LogNote("boot", "started", "tester profile: build=1143, spread=2pts, slippage=match_baseline");
    }
@@ -83,7 +85,7 @@ int init() {
 }
 
 int deinit() {
-   if (ES_LogLevelInput >= 1) LogNote("deinit", "stop", "");
+   if (LogGetLevel() >= ES_LOG_BASIC) LogNote("deinit", "stop", "");
    return 0;
 }
 
@@ -91,7 +93,7 @@ int start() {
    // Per tick; do not trade in Phase 0
    ES_BarTickDbg();
 
-   if (ES_LogLevelInput >= 2) {
+   if (LogGetLevel() >= ES_LOG_DEBUG) {
       // dbg_closers
       int oc=0; double last=0.0; ES_ScanOpen(oc, last);
       double flt = AccountEquity() - AccountBalance();
@@ -108,15 +110,24 @@ int start() {
       LogNote("dbg_scan", s, "");
 
       // dbg_signal_in (inputs snapshot similar to baseline)
-      int max_trades = 47;
-      int step_pts   = 15;
-      int spread_pts = 2;
-      string si = StringFormat("in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;dist_from_last_pts=%d",
-                               spread_pts, oc, max_trades, last, step_pts, 0);
+      int max_trades = MaxTrades;
+      int step_pts   = Step;
+      int spread_pts = (int)MathRound((Ask - Bid)/Point);
+      double open_px = Ask;
+      int dist_pts = (last > 0.0) ? (int)MathAbs((open_px - last)/Point) : 0;
+      string si = StringFormat("in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;dist_from_last_pts=%d", spread_pts, oc, max_trades, last, step_pts, dist_pts);
       LogNote("dbg_signal_in", si, "");
 
       // dbg_signal (no trading; deterministic seed rule echo)
-      string sd = "dir=BUY;rule=grid_seed;add_allowed=0;ok=1";
+      string sd;
+      if (oc == 0) {
+         sd = "dir=BUY;rule=grid_seed;add_allowed=0;ok=1";
+      } else {
+         int under_max = (oc < MaxTrades) ? 1 : 0;
+         int add_allowed = (under_max && (dist_pts >= step_pts)) ? 1 : 0;
+         int ok = add_allowed;
+         sd = StringFormat("dir=NONE;rule=grid_add;add_allowed=%d;ok=%d;why=step", add_allowed, ok);
+      }
       LogNote("dbg_signal", sd, "");
    }
    return 0;

@@ -50,6 +50,7 @@ void __es_open_if_needed() {
 }
 
 // -------- Public API used by EA --------
+int LogGetLevel() { return ES_log_level; }
 void LogSetLevel(int level) { ES_log_level = level; }
 void LogSetLabel(string label) { ES_log_label = label; __es_open_if_needed(); }
 void LogSetMagic(int magic) { ES_log_magic = magic; __es_open_if_needed(); }
