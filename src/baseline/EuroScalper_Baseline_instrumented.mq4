@@ -13,6 +13,25 @@ void ES_LogInit(string sym, int magic) {
    LogSetLabel("BASELINE");
    LogSetLevel(ES_LogLevelInput);
    LogInit(sym, magic, 1143, "M"+IntegerToString(Period()), 2, -1);
+   if(ES_LogLevelInput >= 2) {
+      string _env = StringFormat("env:digits=%d;point=%G;lotstep=%G;minlot=%G;maxlot=%G;stoplevel=%d;build=%d;profile=Tester;spread_mode=%s",
+                                 Digits, Point, MarketInfo(sym, MODE_LOTSTEP), MarketInfo(sym, MODE_MINLOT),
+                                 MarketInfo(sym, MODE_MAXLOT), (int)MarketInfo(sym, MODE_STOPLEVEL),
+                                 1143, "fixed");
+      LogNote("boot_dbg", _env, "");
+
+      int _open_count = 0;
+      for(int i=0;i<OrdersTotal();i++){
+         if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES)){
+            if(OrderSymbol()==sym){
+               _open_count++;
+            }
+         }
+      }
+      string _rest = StringFormat("restored:open_count=%d;last_balance=%.2f", _open_count, AccountBalance());
+      LogNote("dbg_restore", _rest, "");
+   }
+
 }
 void ES_LogDeinit() { LogNote("deinit","stop",""); }
 
@@ -485,6 +504,94 @@ I_d_1 = (MarketInfo(_Symbol, MODE_SPREAD) * _Point);
 //|                                                                  |
 //+------------------------------------------------------------------+
 int start() {
+// Propagate lot sizing policy label to Audit.mqh (A5) — minimal detection
+if(LotMultiplikator > 1.000001) ES_SetLotPolicy("marti");
+else ES_SetLotPolicy("fixed");
+
+   // DEBUG pipeline breadcrumbs (A2): closers -> gates -> scan (additive; ES_LOG_DEBUG only)
+   if(ES_LogLevelInput >= 2){
+      int _oc=0; double _last=0.0; datetime _last_t=0; double _flt=0.0;
+      for(int _i=0; _i<OrdersTotal(); _i++){
+         if(OrderSelect(_i, SELECT_BY_POS, MODE_TRADES) && OrderSymbol()==Symbol()){
+            _oc++;
+            _flt += OrderProfit()+OrderSwap()+OrderCommission();
+            datetime _ot = OrderOpenTime();
+            if(_ot > _last_t){ _last_t=_ot; _last = OrderOpenPrice(); }
+         }
+      }
+      string _c = StringFormat("closers:daily=%d;equity=%d;open=%d;flt=%.2f", Use_Daily_Target, UseEquityStop, _oc, _flt);
+      LogNote("dbg_closers", _c, "");
+
+      string _g = StringFormat("gate:dow=%d;hour=%d;block=0", DayOfWeek(), Hour());
+      LogNote("dbg_gates", _g, "");
+
+      string _s = StringFormat("scan:open_count=%d;last_entry=%.5f", _oc, _last);
+      LogNote("dbg_scan", _s, "");
+   
+      // --- A3: Direction decision packet (minimal, logging-only) ---
+      int    _spr   = (int)MarketInfo(Symbol(), MODE_SPREAD);
+      int    _mx    = (int)MaxTrades;
+      int    _step  = (int)Step;
+      double _open0 = Open[0];
+      int    _dist  = (_oc > 0 && _last > 0 ? (int)MathRound(MathAbs(_open0 - _last)/Point) : 0);
+
+      string _in = StringFormat(
+         "in:bar_ago=0;spread_pts=%d;open_count=%d;max_trades=%d;last_entry=%.5f;step=%d;dist_from_last_pts=%d",
+         _spr, _oc, _mx, _last, _step, _dist
+      );
+      LogNote("dbg_signal_in", _in, "");
+
+      // Decide grid direction intent purely from grid state (no TA): seed vs add
+      string _dir  = "NONE";
+      string _rule = (_oc == 0 ? "grid_seed" : "grid_add");
+      int    _add_allowed = 0;     // 1 iff distance >= Step in the appropriate side
+      int    _ok = 0;              // 1 iff actionable, 0 if suppressed
+      string _why = "";            // reason when _ok == 0
+
+      // Count current sides for this symbol (magic may be 0 in this build)
+      int _buy_count = 0, _sell_count = 0;
+      for(int ii=0; ii<OrdersTotal(); ii++) if(OrderSelect(ii, SELECT_BY_POS, MODE_TRADES)){
+         if(OrderSymbol()==Symbol()){
+            if(OrderType()==OP_BUY)  _buy_count++;
+            if(OrderType()==OP_SELL) _sell_count++;
+         }
+      }
+
+      if(_oc > 0){
+         // Grid add rules at bar open
+         if(_buy_count > 0){
+            if( (_last - _open0) / Point >= _step ){ _dir = "BUY";  _add_allowed = 1; }
+         } else if(_sell_count > 0){
+            if( (_open0 - _last) / Point >= _step ){ _dir = "SELL"; _add_allowed = 1; }
+         }
+         if(_oc >= _mx){ _ok = 0; _why = "max_trades"; }
+         else if(_add_allowed == 1){ _ok = 1; }
+         else { _ok = 0; _why = "step"; }
+      } else {
+         // No basket open: we don’t seed here (logging-only visibility)
+         _dir = "BUY"; _ok = 1; _why = "";
+      }
+
+      string _sig;
+      if(_ok==1)
+         _sig = StringFormat("dir=%s;rule=%s;add_allowed=%d;ok=1", _dir, _rule, _add_allowed);
+      else
+         _sig = StringFormat("dir=%s;rule=%s;add_allowed=%d;ok=0;why=%s", _dir, _rule, _add_allowed, _why);
+      LogNote("dbg_signal", _sig, "");
+      // --- end A3 ---
+}
+
+   // DEBUG determinism anchor (Phase 1): once-per-bar heartbeat
+   static datetime ES_bar_last = 0;
+   static int ES_bar_seq = 0;
+   datetime _bar = iTime(Symbol(), Period(), 0);
+   if(_bar != ES_bar_last){
+      ES_bar_last = _bar;
+      ES_bar_seq++;
+      string _hb = StringFormat("bar=M%d;seq=%d", Period(), ES_bar_seq);
+      if(ES_LogLevelInput >= 2) LogNote("bar_tick_dbg", _hb, "");
+   }
+
    ES_LogTick(Symbol(), /*magic*/0, (int)Step, (int)TakeProfit, MaxTrades);
    ES_Audit_OnTick((int)Step, (int)TakeProfit, MaxTrades);
 

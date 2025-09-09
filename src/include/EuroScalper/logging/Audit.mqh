@@ -1,4 +1,10 @@
 // EuroScalper Forensic Audit — request/reply wrappers for MT4 trade calls
+
+// ---- Lot policy label propagated from EA (A5) ----
+string ES_LOT_POLICY = "fixed";
+void ES_SetLotPolicy(const string s){ ES_LOT_POLICY = s; }
+// ---------------------------------------------------
+
 #ifndef __EUROSCALPER_AUDIT_MQH__
 #define __EUROSCALPER_AUDIT_MQH__
 
@@ -85,7 +91,37 @@ int ES_OrderSendLogged(string sym, int type, double volume, double price, int sl
 {
    datetime ts_req = TimeCurrent();
    string side = (type==OP_BUY ? "buy" : (type==OP_SELL ? "sell" : "other"));
-   // request
+   
+// A5/A6: lot progression debug (policy label provided by ES_SetLotPolicy)
+int oc_dbg = 0; double prev_lot_dbg = 0; datetime prev_t_dbg = 0;
+for(int ii=0; ii<OrdersTotal(); ii++){
+   if(OrderSelect(ii, SELECT_BY_POS, MODE_TRADES)){
+      if(OrderSymbol()==sym && OrderMagicNumber()==magic){
+         oc_dbg++;
+         if(OrderType()==type){
+            if(prev_t_dbg==0 || OrderOpenTime()>prev_t_dbg){
+               prev_t_dbg = OrderOpenTime();
+               prev_lot_dbg = OrderLots();
+            }
+         }
+      }
+   }
+}
+string lots_in_dbg = StringFormat("lots_in:policy=%s|base_lot=%.2f|prev_lot=%.2f|open_count=%d",
+                                  ES_LOT_POLICY, volume, prev_lot_dbg, oc_dbg);
+LogEventAt(ts_req, "dbg_lots_in", side, 0, volume, 0, 0, 0, 0,
+           0, 0, (int)MarketInfo(sym, MODE_SPREAD), slippage,
+           oc_dbg, 0, 0, 0, AccountEquity(), AccountFreeMargin(),
+           lots_in_dbg, 0, "");
+
+// Decision result: proposed==rounded==volume here (normalization happens upstream)
+string lots_dbg = StringFormat("lots:prev_lot=%.2f|proposed=%.2f|rounded=%.2f|ok=1",
+                               prev_lot_dbg, volume, volume);
+LogEventAt(ts_req, "dbg_lots", side, 0, volume, 0, 0, 0, 0,
+           0, 0, (int)MarketInfo(sym, MODE_SPREAD), slippage,
+           oc_dbg, 0, 0, 0, AccountEquity(), AccountFreeMargin(),
+           lots_dbg, 0, "");
+// request
    LogEventAt(ts_req, "send_req", side, 0, volume, price,
               0, 0, tp, 0, 0, (int)MarketInfo(sym, MODE_SPREAD), slippage,
               0, 0, 0, 0, AccountEquity(), AccountFreeMargin(),
