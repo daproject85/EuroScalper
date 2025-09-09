@@ -77,13 +77,13 @@ int init() {
    // Boot row
    if (ES_LogLevelInput >= 1) {
       string r = StringFormat("boot:app=Euroscalper_rewrite|build=%d|log_suffix=_REWRITE|magic=%d", 1143, ES_magic);
-      LogNote("boot", r, "");
+      LogNote("boot", "started", "tester profile: build=1143, spread=2pts, slippage=match_baseline");
    }
    return 0;
 }
 
 int deinit() {
-   if (ES_LogLevelInput >= 1) LogNote("shutdown", "reason=detach", "");
+   if (ES_LogLevelInput >= 1) LogNote("deinit", "stop", "");
    return 0;
 }
 
