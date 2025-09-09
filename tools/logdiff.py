@@ -2,20 +2,11 @@
 """
 logdiff.py — Compare two semicolon-separated EuroScalper logs (Baseline vs Rewrite).
 
-Features
-- Finds the FIRST differing column within each paired line.
-- Lets you ignore entire events (by event name) and/or specific columns by index.
-- Two matching modes:
-    1) index   : compare lines in order after filtering.
-    2) key     : match lines using chosen "key columns" (e.g., timestamp+event).
-- Numeric tolerance: treat floats as equal within --float-tol.
-- CSV report and concise stdout summary.
-- Robust to blank/short lines; preserves original line numbers in reports.
-
-Assumptions (tunable):
-- Fields are semicolon (;) separated.
-- "Event" is typically at column 6 (0-based), OR appears as a token like "boot:..."
-  in one of the later fields. We try both heuristics.
+- Default is KEYED comparison by timestamp + event (cols 0 and 6).
+- Finds the FIRST differing column per matched pair (default) or ALL diffs per pair (--report all).
+- Ignore not-yet-implemented EVENTS and/or noisy COLUMNS.
+- Numeric tolerance for float jitter.
+- CSV export and concise stdout summary.
 """
 
 from __future__ import annotations
@@ -29,13 +20,13 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Iterable
 
 try:
-    import yaml  # type: ignore
+    import yaml  # optional
     _HAS_YAML = True
 except Exception:
     _HAS_YAML = False
 
 SEMICOLON = ';'
-DEFAULT_EVENT_COL = 6  # heuristic, can be wrong for some custom logs
+DEFAULT_EVENT_COL = 6
 NUM_REGEX = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
 
 @dataclass
@@ -44,7 +35,7 @@ class LogRecord:
     fields: List[str]
     lineno: int
     event: str
-    key: Optional[Tuple] = None  # populated later for key-mode matching
+    key: Optional[Tuple] = None
 
 def is_number(s: str) -> bool:
     return bool(NUM_REGEX.match(s.strip()))
@@ -62,13 +53,12 @@ def approx_equal(a: str, b: str, tol: float) -> bool:
     return False
 
 def parse_event(fields: List[str]) -> str:
-    # 1) heuristic: column 6 if present
+    # 1) heuristic: column 6 if present and non-numeric
     if len(fields) > DEFAULT_EVENT_COL and fields[DEFAULT_EVENT_COL].strip():
         cand = fields[DEFAULT_EVENT_COL].strip()
-        # Guard against placeholders like "0" that are clearly not events
         if not is_number(cand):
             return cand
-    # 2) look for a token like "EVENT:kvpairs"
+    # 2) fallback: token like "EVENT:kvpairs"
     for f in fields:
         if ':' in f:
             left = f.split(':', 1)[0].strip()
@@ -77,14 +67,13 @@ def parse_event(fields: List[str]) -> str:
     return ""
 
 def load_ignore_config(path: Optional[Path]) -> Tuple[set, set]:
-    ignore_events = set()
-    ignore_columns = set()
+    ignore_events: set = set()
+    ignore_columns: set = set()
     if path is None:
         return ignore_events, ignore_columns
     if not path.exists():
         raise FileNotFoundError(f"Ignore config not found: {path}")
     text = path.read_text(encoding='utf-8')
-    # Try YAML, fall back to JSON
     data = None
     if _HAS_YAML:
         try:
@@ -103,7 +92,6 @@ def load_ignore_config(path: Optional[Path]) -> Tuple[set, set]:
     if not isinstance(ev, list) or not isinstance(cols, list):
         raise ValueError("'ignore_events' and 'ignore_columns' must both be lists")
     ignore_events = {str(x).strip() for x in ev if str(x).strip()}
-    # columns may be ints or strings like "0", "1"
     for c in cols:
         try:
             ignore_columns.add(int(c))
@@ -116,11 +104,8 @@ def iter_records(path: Path, ignore_events: set) -> Iterable[LogRecord]:
         for i, line in enumerate(f, start=1):
             raw = line.rstrip('\n')
             if not raw.strip():
-                continue  # skip blanks
-            fields = raw.split(SEMICOLON)
-            # Normalize to keep consistent indexing
-            # (Don't strip completely because empty fields are meaningful. Trim spaces.)
-            fields = [x.strip() for x in fields]
+                continue
+            fields = [x.strip() for x in raw.split(SEMICOLON)]
             event = parse_event(fields)
             if event and event in ignore_events:
                 continue
@@ -144,6 +129,18 @@ def first_diff_column(a: List[str], b: List[str], ignore_cols: set, tol: float) 
             return idx, va, vb
     return None
 
+def diff_all_columns(a: List[str], b: List[str], ignore_cols: set, tol: float):
+    diffs = []
+    max_i = max(len(a), len(b))
+    for idx in range(max_i):
+        if idx in ignore_cols:
+            continue
+        va = a[idx] if idx < len(a) else ""
+        vb = b[idx] if idx < len(b) else ""
+        if not approx_equal(va, vb, tol):
+            diffs.append((idx, va, vb))
+    return diffs
+
 def compare_index_mode(a_records: List[LogRecord], b_records: List[LogRecord],
                        ignore_cols: set, tol: float, max_rows: Optional[int]) -> List[Dict]:
     out = []
@@ -163,7 +160,6 @@ def compare_index_mode(a_records: List[LogRecord], b_records: List[LogRecord],
                 "baseline_raw": ra.raw,
                 "rewrite_raw": rb.raw,
             })
-    # Report extra trailing lines if unequal lengths
     if len(a_records) != len(b_records):
         longer, name = (a_records, "baseline") if len(a_records) > len(b_records) else (b_records, "rewrite")
         start = min(len(a_records), len(b_records))
@@ -183,88 +179,128 @@ def compare_index_mode(a_records: List[LogRecord], b_records: List[LogRecord],
 
 def compare_key_mode(a_records: List[LogRecord], b_records: List[LogRecord],
                      key_cols: List[int], ignore_cols: set, tol: float,
-                     report_extra: bool, max_rows: Optional[int]) -> List[Dict]:
-    # Build maps for rewrite
-    b_map: Dict[Tuple, LogRecord] = {}
-    for rb in b_records:
-        try:
-            rb.key = build_key(rb.fields, key_cols)
-        except Exception:
-            rb.key = None
-        if rb.key is not None:
-            b_map[rb.key] = rb
+                     report_extra: bool, max_rows: Optional[int],
+                     report_mode: str = "first") -> List[Dict]:
+    """
+    Group by key across both files, then compare the nth baseline record to
+    the nth rewrite record for each key (stable order). Supports two report modes:
+      - "first": emit only the first differing column per paired row
+      - "all"  : emit one row per differing column per paired row
+    Also reports extras in either file when counts per key differ (if report_extra True).
+    """
+    from collections import defaultdict
+    a_groups: Dict[Tuple, List[LogRecord]] = defaultdict(list)
+    b_groups: Dict[Tuple, List[LogRecord]] = defaultdict(list)
 
-    out = []
-    count = 0
-    for ra in a_records:
-        if count == max_rows:
-            break
+    def calc_key(r: LogRecord) -> Optional[Tuple]:
         try:
-            ra.key = build_key(ra.fields, key_cols)
+            return build_key(r.fields, key_cols)
         except Exception:
-            ra.key = None
-        if ra.key is None:
-            continue
-        rb = b_map.get(ra.key)
-        if rb is None:
-            if report_extra:
+            return None
+
+    for ra in a_records:
+        ra.key = calc_key(ra)
+        if ra.key is not None:
+            a_groups[ra.key].append(ra)
+    for rb in b_records:
+        rb.key = calc_key(rb)
+        if rb.key is not None:
+            b_groups[rb.key].append(rb)
+
+    # stable key order based on baseline appearance
+    seen_keys = []
+    for ra in a_records:
+        if ra.key is not None and (not seen_keys or seen_keys[-1] != ra.key):
+            seen_keys.append(ra.key)
+
+    out: List[Dict] = []
+    emitted = 0
+    def maybe_stop():
+        return max_rows is not None and emitted >= max_rows
+
+    for key in seen_keys:
+        a_list = a_groups.get(key, [])
+        b_list = b_groups.get(key, [])
+        pairs = min(len(a_list), len(b_list))
+
+        for i in range(pairs):
+            if maybe_stop():
+                break
+            ra, rb = a_list[i], b_list[i]
+            if report_mode == "all":
+                diffs = diff_all_columns(ra.fields, rb.fields, ignore_cols, tol)
+                for (idx, va, vb) in diffs:
+                    if maybe_stop():
+                        break
+                    out.append({
+                        "baseline_lineno": ra.lineno,
+                        "rewrite_lineno": rb.lineno,
+                        "event": ra.event or rb.event,
+                        "key": "|".join(map(str, key)),
+                        "diff_col": idx,
+                        "baseline_value": va,
+                        "rewrite_value": vb,
+                        "baseline_raw": ra.raw,
+                        "rewrite_raw": rb.raw,
+                    })
+                    emitted += 1
+            else:
+                diff = first_diff_column(ra.fields, rb.fields, ignore_cols, tol)
+                if diff is not None and not maybe_stop():
+                    idx, va, vb = diff
+                    out.append({
+                        "baseline_lineno": ra.lineno,
+                        "rewrite_lineno": rb.lineno,
+                        "event": ra.event or rb.event,
+                        "key": "|".join(map(str, key)),
+                        "diff_col": idx,
+                        "baseline_value": va,
+                        "rewrite_value": vb,
+                        "baseline_raw": ra.raw,
+                        "rewrite_raw": rb.raw,
+                    })
+                    emitted += 1
+
+        if report_extra and not maybe_stop():
+            for ra in a_list[pairs:]:
+                if maybe_stop():
+                    break
                 out.append({
                     "baseline_lineno": ra.lineno,
                     "rewrite_lineno": "",
                     "event": ra.event,
-                    "key": "|".join(map(str, ra.key)),
+                    "key": "|".join(map(str, key)),
                     "diff_col": -1,
                     "baseline_value": ra.raw,
                     "rewrite_value": "",
                     "baseline_raw": ra.raw,
                     "rewrite_raw": "",
-                    "note": "no matching rewrite line for key",
+                    "note": "no matching rewrite line for key (extra in baseline)",
                 })
-                count += 1
-            continue
-        diff = first_diff_column(ra.fields, rb.fields, ignore_cols, tol)
-        if diff is not None:
-            idx, va, vb = diff
-            out.append({
-                "baseline_lineno": ra.lineno,
-                "rewrite_lineno": rb.lineno,
-                "event": ra.event or rb.event,
-                "key": "|".join(map(str, ra.key)),
-                "diff_col": idx,
-                "baseline_value": va,
-                "rewrite_value": vb,
-                "baseline_raw": ra.raw,
-                "rewrite_raw": rb.raw,
-            })
-            count += 1
-
-    if report_extra:
-        # lines in rewrite with no baseline match
-        a_keys = {r.key for r in a_records if r.key is not None}
-        for rb in b_records:
-            if rb.key is not None and rb.key not in a_keys:
-                if count == max_rows:
+                emitted += 1
+            for rb in b_list[pairs:]:
+                if maybe_stop():
                     break
                 out.append({
                     "baseline_lineno": "",
                     "rewrite_lineno": rb.lineno,
                     "event": rb.event,
-                    "key": "|".join(map(str, rb.key)),
+                    "key": "|".join(map(str, key)),
                     "diff_col": -1,
                     "baseline_value": "",
                     "rewrite_value": rb.raw,
                     "baseline_raw": "",
                     "rewrite_raw": rb.raw,
-                    "note": "no matching baseline line for key",
+                    "note": "no matching baseline line for key (extra in rewrite)",
                 })
-                count += 1
+                emitted += 1
+
     return out
 
 def write_csv(rows: List[Dict], path: Path) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
-    # Preserve useful columns order
     cols = ["baseline_lineno","rewrite_lineno","event","key","diff_col",
             "baseline_value","rewrite_value","note","baseline_raw","rewrite_raw"]
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -274,10 +310,10 @@ def write_csv(rows: List[Dict], path: Path) -> None:
             w.writerow(r)
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Compare Baseline vs Rewrite logs and report first differing column per line.")
+    p = argparse.ArgumentParser(description="Compare Baseline vs Rewrite logs and report differing columns per matched row.")
     p.add_argument("baseline", type=Path, help="Path to baseline log file")
     p.add_argument("rewrite", type=Path, help="Path to rewrite log file")
-    p.add_argument("--mode", choices=["index","key"], default="index",
+    p.add_argument("--mode", choices=["index","key"], default="key",
                    help="Comparison mode: 'index' (in-order) or 'key' (match on columns)")
     p.add_argument("--key-cols", type=str, default="0,6",
                    help="Comma-separated column indices to build key (only in --mode key). Default: 0,6 (timestamp,event)")
@@ -291,13 +327,14 @@ def main() -> None:
                    help="Numeric tolerance; consider floats equal within this tolerance (rel/abs). Default 0.0")
     p.add_argument("--report-extra", action="store_true",
                    help="In key-mode, also report lines that exist in only one file")
+    p.add_argument("--report", choices=["first","all"], default="first",
+                   help="Emit only the first differing column per pair (first) or all differing columns (all)")
     p.add_argument("--max-rows", type=int, default=None,
-                   help="Stop after reporting this many diffs (for quick scans)")
+                   help="Stop after reporting this many rows (for quick scans)")
     p.add_argument("--csv", type=Path, default=None,
                    help="Write detailed diff rows to CSV at this path")
     args = p.parse_args()
 
-    # Load ignore config
     cfg_ignore_events, cfg_ignore_cols = load_ignore_config(args.ignore_config)
     cli_ignore_events = {e.strip() for e in args.ignore_events.split(",") if e.strip()}
     cli_ignore_cols = set()
@@ -309,14 +346,13 @@ def main() -> None:
     ignore_events = cfg_ignore_events.union(cli_ignore_events)
     ignore_cols = cfg_ignore_cols.union(cli_ignore_cols)
 
-    # Read records
     a_records = list(iter_records(args.baseline, ignore_events))
     b_records = list(iter_records(args.rewrite, ignore_events))
 
     if args.mode == "index":
         rows = compare_index_mode(a_records, b_records, ignore_cols, args.float_tol, args.max_rows)
     else:
-        key_cols = []
+        key_cols: List[int] = []
         if args.key_cols.strip():
             for tok in args.key_cols.split(","):
                 tok = tok.strip()
@@ -328,16 +364,16 @@ def main() -> None:
                     raise SystemExit(f"Invalid key column index: {tok}") from e
         if not key_cols:
             raise SystemExit("In key-mode you must provide --key-cols")
-        rows = compare_key_mode(a_records, b_records, key_cols, ignore_cols, args.float_tol, args.report_extra, args.max_rows)
+        rows = compare_key_mode(a_records, b_records, key_cols, ignore_cols, args.float_tol,
+                                args.report_extra, args.max_rows, args.report)
 
-    # Report
     if not rows:
         print("No differences found under current filters and tolerance.")
     else:
-        print(f"Found {len(rows)} difference(s). Showing first 10:")
+        print(f"Found {len(rows)} difference row(s). Showing first 10:")
         for i, r in enumerate(rows[:10], start=1):
-            key = f" key={r.get('key','')}" if 'key' in r and r.get('key') else ""
-            note = f" [{r['note']}]" if 'note' in r and r['note'] else ""
+            key = f" key={r.get('key','')}" if r.get('key') else ""
+            note = f" [{r['note']}]" if r.get('note') else ""
             print(f"{i:>3}. base#{r.get('baseline_lineno','')}, rew#{r.get('rewrite_lineno','')}, event={r.get('event','?')}{key}, col={r['diff_col']}, base='{r.get('baseline_value','')}', rew='{r.get('rewrite_value','')}'{note}")
     if args.csv:
         write_csv(rows, args.csv)
