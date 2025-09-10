@@ -1,0 +1,9 @@
+# Events and columns to ignore during comparison
+ignore_events:
+  - boot
+  - init
+
+# Column indices (0-based) to skip when checking for differences
+ignore_columns:
+  - 1   # build
+  - 4   # magic
