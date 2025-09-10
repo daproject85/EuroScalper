@@ -6,6 +6,7 @@
 
 #include <WinUser32.mqh>
 #include <EuroScalper/logging/Logger.mqh>
+#include <EuroScalper/logging/Audit.mqh>
 #include <EuroScalper/core/Normalize.mqh>
 
 // ---------------- Inputs (parity with baseline) ----------------
@@ -42,6 +43,7 @@ datetime ES_prev_bar_ts = 0;
 int      ES_bar_seq     = 0;
 int      ES_magic       = 0;
 
+datetime ES_entry_sent_bar_ts = 0;
 // ---------------- Helpers ----------------
 
 // Map current _Symbol to magic (parity with baseline)
@@ -143,16 +145,16 @@ int start() {
       // dbg_closers
       int oc=0; double last=0.0; ES_ScanOpen(oc, last);
       double flt = AccountEquity() - AccountBalance();
-      string c = StringFormat("closers:daily=%d;equity=%d;open=%d;flt=%.2f",
+      string c = StringFormat("closers:daily=%d|equity=%d|open=%d|flt=%.2f",
                               0, 0, oc, flt);
       LogNote("dbg_closers", c, "");
 
       // dbg_gates (session/time gate only placeholder, block=0)
-      string g = StringFormat("gate:dow=%d;hour=%d;block=0", DayOfWeek(), Hour());
+      string g = StringFormat("gate:dow=%d|hour=%d|block=0", DayOfWeek(), Hour());
       LogNote("dbg_gates", g, "");
 
       // dbg_scan
-      string s = StringFormat("scan:open_count=%d;last_entry=%.5f", oc, last);
+      string s = StringFormat("scan:open_count=%d|last_entry=%.5f", oc, last);
       LogNote("dbg_scan", s, "");
 
       // dbg_signal_in (inputs snapshot similar to baseline)
@@ -166,15 +168,41 @@ int start() {
 
       // dbg_signal (no trading; deterministic seed rule echo)
       string sd;
+      // Direction per baseline: Close[1] >= Close[2] => BUY else SELL
+      double c1 = iClose(_Symbol, Period(), 1);
+      double c2 = iClose(_Symbol, Period(), 2);
+      int    dir_is_buy = (c1 >= c2) ? 1 : 0;
+      string dir_s      = dir_is_buy ? "BUY" : "SELL";
       if (oc == 0) {
-         sd = "dir=BUY;rule=grid_seed;add_allowed=0;ok=1";
+         sd = StringFormat("dir=%s|rule=grid_seed|add_allowed=0|ok=1", dir_s);
       } else {
          int under_max = (oc < MaxTrades) ? 1 : 0;
          int add_allowed = (under_max && (dist_pts >= step_pts)) ? 1 : 0;
          int ok = add_allowed;
-         sd = StringFormat("dir=NONE;rule=grid_add;add_allowed=%d;ok=%d;why=step", add_allowed, ok);
+         sd = StringFormat("dir=NONE|rule=grid_add|add_allowed=%d;ok=%d|why=step", add_allowed, ok);
       }
       LogNote("dbg_signal", sd, "");
+
+      // Phase 2: first entry (only if none open and not sent this bar)
+      if (oc == 0) {
+         datetime bar_ts = iTime(_Symbol, Period(), 0);
+         if (ES_entry_sent_bar_ts != bar_ts) {
+            ES_entry_sent_bar_ts = bar_ts;
+            int type   = dir_is_buy ? OP_BUY : OP_SELL;
+            double req = dir_is_buy ? Ask    : Bid;
+            // Lot parity: extern Lot rounded to step and clamped to broker min/max
+            double step = MarketInfo(_Symbol, MODE_LOTSTEP);
+            double minL = MarketInfo(_Symbol, MODE_MINLOT);
+            double maxL = MarketInfo(_Symbol, MODE_MAXLOT);
+            double lots = Lot;
+            if (step > 0) lots = MathRound(lots/step)*step;
+            if (lots < minL) lots = minL;
+            if (maxL > 0 && lots > maxL) lots = maxL;
+            lots = NormalizeDouble(lots, 2);
+            int slippage = 0;
+            int ticket = ES_OrderSendLogged(_Symbol, type, lots, req, slippage, 0, 0, "", ES_magic, 0, clrNONE);
+         }
+      }
    }
    ES_BarTickDbg();
    return 0;
