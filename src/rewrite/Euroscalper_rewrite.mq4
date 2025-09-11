@@ -210,7 +210,7 @@ int start() {
             if (lots < minL) lots = minL;
             if (maxL > 0 && lots > maxL) lots = maxL;
             lots = NormalizeDouble(lots, 2);
-            int slippage = 0;
+            int slippage = 5;
             int ticket = ES_OrderSendLogged(_Symbol, type, lots, req, slippage, 0, 0, "", ES_magic, 0, clrNONE);
          }
       }
