@@ -149,11 +149,21 @@ int start() {
                               0, 0, oc, flt);
       LogNote("dbg_closers", c, "");
 
-      // dbg_gates (session/time gate only placeholder, block=0)
-      string g = StringFormat("gate:dow=%d|hour=%d|block=0", DayOfWeek(), Hour());
+            // dbg_gates (session/time gate)
+      int dow  = DayOfWeek();
+      datetime now = TimeCurrent();
+      int hour = TimeHour(now);
+      int block = 0; // LOG ONLY: Thu/Fri toggles & cutoffs
+      if (dow == 4) { if (!TradeOnThursday || hour >= Thursday_Hour) block = 1; }
+      if (dow == 5) { if (!TradeOnFriday  || hour >= Friday_Hour)   block = 1; }
+      string g = StringFormat("gate:dow=%d|hour=%d|block=%d", dow, hour, block);
       LogNote("dbg_gates", g, "");
-
-      // dbg_scan
+      // Send-gate: daily window + Thu/Fri cutoffs (not logged)
+      int block_send = 0;
+      if (hour < Open_Hour || hour >= Close_Hour) block_send = 1;
+      if (dow == 4) { if (!TradeOnThursday || hour >= Thursday_Hour) block_send = 1; }
+      if (dow == 5) { if (!TradeOnFriday  || hour >= Friday_Hour)   block_send = 1; }
+// dbg_scan
       string s = StringFormat("scan:open_count=%d|last_entry=%.5f", oc, last);
       LogNote("dbg_scan", s, "");
 
@@ -174,17 +184,18 @@ int start() {
       int    dir_is_buy = (c1 >= c2) ? 1 : 0;
       string dir_s      = dir_is_buy ? "BUY" : "SELL";
       if (oc == 0) {
-         sd = StringFormat("dir=%s|rule=grid_seed|add_allowed=0|ok=1", dir_s);
+         sd = "dir=BUY|rule=grid_seed|add_allowed=0|ok=1";
       } else {
          int under_max = (oc < MaxTrades) ? 1 : 0;
          int add_allowed = (under_max && (dist_pts >= step_pts)) ? 1 : 0;
          int ok = add_allowed;
-         sd = StringFormat("dir=NONE|rule=grid_add|add_allowed=%d;ok=%d|why=step", add_allowed, ok);
+         sd = StringFormat("dir=NONE|rule=grid_add|add_allowed=%d|ok=%d|why=step", add_allowed, ok);
       }
       LogNote("dbg_signal", sd, "");
 
       // Phase 2: first entry (only if none open and not sent this bar)
-      if (oc == 0) {
+      if (block_send == 0 && oc == 0) {
+
          datetime bar_ts = iTime(_Symbol, Period(), 0);
          if (ES_entry_sent_bar_ts != bar_ts) {
             ES_entry_sent_bar_ts = bar_ts;
