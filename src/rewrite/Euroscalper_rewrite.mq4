@@ -276,7 +276,7 @@ int start() {
       int total = OrdersTotal();
       double sumL_buy=0.0, sumPx_buy=0.0; int cnt_buy=0;
       double sumL_sell=0.0, sumPx_sell=0.0; int cnt_sell=0;
-      for (int j=0; j<total; j++) {
+      for (int j=total-1; j>=0; j--) {
          if (OrderSelect(j, SELECT_BY_POS, MODE_TRADES)) {
             if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic) {
                double l = OrderLots();
@@ -289,7 +289,7 @@ int start() {
       if (cnt_buy > 1 && sumL_buy > 0.0) {
          double avg_buy = sumPx_buy / sumL_buy;
          double tp_buy = NormalizeDouble(avg_buy + TakeProfit * Point, Digits);
-         for (int j=0; j<total; j++) {
+         for (int j=total-1; j>=0; j--) {
             if (OrderSelect(j, SELECT_BY_POS, MODE_TRADES)) {
                if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic && OrderType()==OP_BUY) {
                   if (MathAbs(OrderTakeProfit() - tp_buy) > tol) {
@@ -302,7 +302,7 @@ int start() {
       if (cnt_sell > 1 && sumL_sell > 0.0) {
          double avg_sell = sumPx_sell / sumL_sell;
          double tp_sell = NormalizeDouble(avg_sell - TakeProfit * Point, Digits);
-         for (int j=0; j<total; j++) {
+         for (int j=total-1; j>=0; j--) {
             if (OrderSelect(j, SELECT_BY_POS, MODE_TRADES)) {
                if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic && OrderType()==OP_SELL) {
                   if (MathAbs(OrderTakeProfit() - tp_sell) > tol) {
