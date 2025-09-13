@@ -194,6 +194,7 @@ int start() {
          sd = StringFormat("dir=NONE|rule=grid_add|add_allowed=%d|ok=%d|why=step", add_allowed, ok);
       }
       LogNote("dbg_signal", sd, "");
+      ES_BarTickDbg();
 
       // Phase 2: first entry (only if none open and not sent this bar)
       if (block_send == 0 && oc == 0) {
@@ -212,6 +213,7 @@ int start() {
             if (lots < minL) lots = minL;
             if (maxL > 0 && lots > maxL) lots = maxL;
             lots = NormalizeDouble(lots, 2);
+            ES_SetLotPolicy("marti");
             int slippage = 5;
             int ticket = ES_OrderSendLogged(_Symbol, type, lots, req, slippage, 0, 0, "", ES_magic, 0, clrNONE);
             // Phase 3: First TP (Single Order) — set TP after fill (ECN parity)
