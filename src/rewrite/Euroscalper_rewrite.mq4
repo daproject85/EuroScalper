@@ -101,6 +101,7 @@ int init() {
    // Resolve magic and open the log under the exact filename with suffix
    ES_magic = ES_ResolveMagic();
    LogSetMagic(ES_magic);
+   ES_Audit_Init(Symbol(), ES_magic);
 
 // Phase 1 unit/normalization checks (acceptance: log-only)
 if (LogGetLevel() >= ES_LOG_BASIC) {
@@ -169,7 +170,8 @@ int start() {
 
       // dbg_signal_in (inputs snapshot similar to baseline)
       int max_trades = MaxTrades;
-      int step_pts   = (int)Step;
+      int step_pts = (int)MathRound(Step);
+      ES_Audit_OnTick(step_pts, (int)MathRound(TakeProfit), max_trades);
       int spread_pts = (int)MathRound((Ask - Bid)/Point);
       //double open_px = Ask;
       double open_px = Open[0];
