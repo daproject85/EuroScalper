@@ -212,6 +212,18 @@ int start() {
             lots = NormalizeDouble(lots, 2);
             int slippage = 5;
             int ticket = ES_OrderSendLogged(_Symbol, type, lots, req, slippage, 0, 0, "", ES_magic, 0, clrNONE);
+            // Phase 3: First TP (Single Order) — set TP after fill (ECN parity)
+            if (ticket > 0) {
+               if (OrderSelect(ticket, SELECT_BY_TICKET)) {
+                  double fill_px = OrderOpenPrice();
+                  int ot = OrderType();
+                  double tp = (ot == OP_BUY) ? (fill_px + TakeProfit * Point)
+                                             : (fill_px - TakeProfit * Point);
+                  tp = NormalizeDouble(tp, Digits);
+                  int _mod = ES_OrderModifyLogged(ticket, fill_px, OrderStopLoss(), tp, 0, clrNONE);
+               }
+            }
+
          }
       }
    }
