@@ -171,8 +171,10 @@ int start() {
       int max_trades = MaxTrades;
       int step_pts   = (int)Step;
       int spread_pts = (int)MathRound((Ask - Bid)/Point);
-      double open_px = Ask;
-      int dist_pts = (last > 0.0) ? (int)MathAbs((open_px - last)/Point) : 0;
+      //double open_px = Ask;
+      double open_px = Open[0];
+      //int dist_pts = (last > 0.0) ? (int)MathAbs((open_px - last)/Point) : 0;
+      int dist_pts = (oc > 0 && last > 0.0) ? (int)MathRound(MathAbs((open_px - last)/Point)): 0;
       string si = StringFormat("in:bar_ago=0|spread_pts=%d|open_count=%d|max_trades=%d|last_entry=%.5f|step=%d|dist_from_last_pts=%d", spread_pts, oc, max_trades, last, step_pts, dist_pts);
       LogNote("dbg_signal_in", si, "");
 
@@ -224,6 +226,44 @@ int start() {
                }
             }
 
+         }
+      }
+
+      // Phase 5: grid add (same-side, spacing, max, gates, once-per-bar)
+      if (block_send == 0 && oc > 0) {
+         // add_allowed computed above in dbg_signal path: under_max && dist_pts>=step_pts
+         int under_max2 = (oc < MaxTrades) ? 1 : 0;
+         int add_allowed2 = (under_max2 && (dist_pts >= step_pts)) ? 1 : 0;
+         if (add_allowed2 == 1) {
+            datetime bar_ts2 = iTime(_Symbol, Period(), 0);
+            if (ES_entry_sent_bar_ts != bar_ts2) {
+               // Determine basket side (any order decides)
+               int total2 = OrdersTotal();
+               int basket_is_buy = 0; int basket_is_sell = 0;
+               for (int k=0; k<total2; k++) if (OrderSelect(k, SELECT_BY_POS, MODE_TRADES)) {
+                  if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic) {
+                     if (OrderType()==OP_BUY)  basket_is_buy  = 1;
+                     if (OrderType()==OP_SELL) basket_is_sell = 1;
+                  }
+               }
+               int type2 = basket_is_buy ? OP_BUY : OP_SELL;
+               double req2 = basket_is_buy ? Ask : Bid;
+               // Lots for add: Lot * (LotMultiplikator ^ oc), then broker normalization/clamp
+               double stepL = MarketInfo(_Symbol, MODE_LOTSTEP);
+               double minL2 = MarketInfo(_Symbol, MODE_MINLOT);
+               double maxL2 = MarketInfo(_Symbol, MODE_MAXLOT);
+               double lots2 = Lot;
+               if (LotMultiplikator > 0) {
+                  lots2 = Lot * MathPow(LotMultiplikator, oc);
+               }
+               if (stepL > 0) lots2 = MathRound(lots2/stepL)*stepL;
+               if (lots2 < minL2) lots2 = minL2;
+               if (maxL2 > 0 && lots2 > maxL2) lots2 = maxL2;
+               lots2 = NormalizeDouble(lots2, 2);
+               int slippage2 = 5;
+               int ticket2 = ES_OrderSendLogged(_Symbol, type2, lots2, req2, slippage2, 0, 0, "", ES_magic, 0, clrNONE);
+               ES_entry_sent_bar_ts = bar_ts2;
+            }
          }
       }
    }
