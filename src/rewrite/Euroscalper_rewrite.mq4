@@ -226,7 +226,21 @@ int start() {
                   double tp = (ot == OP_BUY) ? (fill_px + TakeProfit * Point)
                                              : (fill_px - TakeProfit * Point);
                   tp = NormalizeDouble(tp, Digits);
-                  int _mod = ES_OrderModifyLogged(ticket, fill_px, OrderStopLoss(), tp, 0, clrNONE);
+                  // Use basket average open price for the 'price' param (baseline parity)
+                  double avg_px = fill_px;
+                  double _sumL = 0.0, _sumPx = 0.0;
+                  int _tot = OrdersTotal();
+                  for (int _j=0; _j<_tot; _j++) {
+                     if (OrderSelect(_j, SELECT_BY_POS, MODE_TRADES)) {
+                        if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic && (OrderType()==OP_BUY || OrderType()==OP_SELL)) {
+                           double _l = OrderLots();
+                           _sumL  += _l;
+                           _sumPx += _l * OrderOpenPrice();
+                        }
+                     }
+                  }
+                  if (_sumL > 0.0) avg_px = NormalizeDouble(_sumPx/_sumL, Digits);
+                  int _mod = ES_OrderModifyLogged(ticket, avg_px, OrderStopLoss(), tp, 0, clrNONE);
                }
             }
 
@@ -293,7 +307,7 @@ int start() {
             if (OrderSelect(j, SELECT_BY_POS, MODE_TRADES)) {
                if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic && OrderType()==OP_BUY) {
                   if (MathAbs(OrderTakeProfit() - tp_buy) > tol) {
-                     int _ = ES_OrderModifyLogged(OrderTicket(), OrderOpenPrice(), OrderStopLoss(), tp_buy, 0, clrNONE);
+                     int _ = ES_OrderModifyLogged(OrderTicket(), NormalizeDouble(avg_buy, Digits), OrderStopLoss(), tp_buy, 0, clrNONE);
                   }
                }
             }
@@ -306,7 +320,7 @@ int start() {
             if (OrderSelect(j, SELECT_BY_POS, MODE_TRADES)) {
                if (OrderSymbol()==_Symbol && OrderMagicNumber()==ES_magic && OrderType()==OP_SELL) {
                   if (MathAbs(OrderTakeProfit() - tp_sell) > tol) {
-                     int _ = ES_OrderModifyLogged(OrderTicket(), OrderOpenPrice(), OrderStopLoss(), tp_sell, 0, clrNONE);
+                     int _ = ES_OrderModifyLogged(OrderTicket(), NormalizeDouble(avg_sell, Digits), OrderStopLoss(), tp_sell, 0, clrNONE);
                   }
                }
             }
